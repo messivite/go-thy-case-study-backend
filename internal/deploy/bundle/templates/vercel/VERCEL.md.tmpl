@@ -1,0 +1,19 @@
+# Vercel + harici Go API
+
+Bu repodaki API uzun çalışan bir HTTP sürecidir (**`cmd/api`**, `PORT` varsayılan **{{.Port}}**). Vercel serverless olarak bu ikiliyi doğrudan “drop-in” çalıştırmak için uygundur; üretimde API’yi **Railway**, **Fly.io** vb. üzerinde çalıştırıp burada yalnızca ön yüz veya yönlendirme kullanmanız önerilir.
+
+## `vercel.json`
+
+Üretilen `vercel.json`, tarayıcıdan gelen `/api/*` isteklerini şu taban adrese yönlendirir:
+
+**`{{.APIBaseURL}}`**
+
+Bu değeri gerçek API URL’inizle değiştirin (sonunda `/` olmasın).
+
+## Örnek akış
+
+1. API’yi Railway/Fly’da deploy edin; taban URL’i not edin.
+2. Bu dosyadaki placeholder’ı güncelleyin veya `thy-case-llm deploy init vercel --api-base-url https://api.ornek.com` ile yeniden üretin.
+3. Vercel projesine statik/Next ön yüzü bağlayın; `vercel.json` aynı repoda veya monorepo kökünde olabilir.
+
+Go modülü (şablon sırasında tespit): **`{{.Module}}`**

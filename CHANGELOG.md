@@ -7,6 +7,7 @@
 ### Added
 
 - `CHANGELOG.md` ve `RELEASE_NOTES.md`.
+- `thy-case-llm deploy list|show|init` ve `internal/deploy` (Railway / Fly.io / Vercel örnek şablonları, `go:embed`).
 
 ### Fixed
 

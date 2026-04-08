@@ -63,7 +63,7 @@ THY case study için yazdığım Go backend. Auth Supabase, roller JWT claim üz
 - **Profil:** `public.profiles`, `auth.users` ile 1:1
 - **Chat:** Varsayılan Supabase Postgres (REST + service role); istersen `CHAT_PERSISTENCE=memory` ile sadece RAM
 - **DB:** Supabase Postgres (auth + `profiles` + `user_roles` + chat tabloları, RLS)
-- **LLM:** `providers.yaml` + `.env`, yönetim için `thy-case-llm`
+- **LLM:** `providers.yaml` + `.env`, yönetim için `thy-case-llm` (`deploy` ile Railway/Fly/Vercel şablonları)
 
 ## Proje Yapısı
 
@@ -73,6 +73,7 @@ cmd/
   server/main.go           → gosupabase dev uyumlu giriş noktası
   thy-case-llm/main.go     → LLM provider yönetim CLI'ı
 internal/
+  deploy/                  → deploy list/show/init (Railway, Fly, Vercel şablonları, go:embed)
   domain/chat/             → Domain modelleri, interface'ler, error'lar
     models.go              → Role, ChatMessage, ChatSession, StreamEvent, ProviderRequest/Response
     provider.go            → LLMProvider interface (Complete + Stream)
@@ -142,6 +143,26 @@ cd /Users/kullaniciAdiniz/Projects/thy-case-study-backend
 go install ./cmd/thy-case-llm
 ```
 
+**Repoyu klonlayıp tüm çalıştırılabilirleri `go install` ile kurmak:** modül kökünde (Go 1.16+; bu repo 1.25) şu yeterli; `go mod download` ayrıca gerekmez, derleme sırasında bağımlılıklar iner:
+
+```bash
+git clone https://github.com/messivite/go-thy-case-study-backend.git
+cd go-thy-case-study-backend
+go install ./cmd/...
+```
+
+`$(go env GOPATH)/bin` içine şunlar yazılır: **`api`**, **`server`**, **`thy-case-llm`**. Bu dizin `PATH`’te değilse:
+
+```bash
+export PATH="$(go env GOPATH)/bin:$PATH"
+thy-case-llm version
+# api ve server doğrudan sunucu başlatır; çalıştırmak için repo kökünde .env ile:
+#   api
+#   server
+```
+
+Çalışma zamanı için ayrıca `.env` / `providers.yaml` / Supabase ayarları gerekir; bunlar `go install` ile gelmez.
+
 ### Önemli not (güncel binary)
 
 `templates list`, `templates show`, `provider add --template …` Faz 2’den beri var. Eski `go install` binary’si kalırsa şunu görürsün:
@@ -175,7 +196,28 @@ Install istemezsen: `go run ./cmd/thy-case-llm templates list`.
 | `provider validate` | Tüm provider'ların env key kontrolünü yap |
 | `templates list` | Yerleşik provider şablonlarını listele (openai, gemini, anthropic, …) |
 | `templates show <name>` | Bir şablonun detayını göster (model, env key, base URL) |
+| `deploy list` | Üretilebilir deploy hedeflerini listele (`railway`, `fly`, `vercel`) |
+| `deploy show <id>` | Hedef açıklaması ve yazılacak dosya yolları |
+| `deploy init <id>` | Şablonları repoya yazar (`Dockerfile`, `fly.toml`, örnek `vercel.json`, …) |
 | `doctor` | Provider + env + config için hızlı sağlık kontrolü |
+
+### Deploy şablonları (Railway / Fly / Vercel)
+
+API `cmd/api` altında çalışır; `PORT` varsayılanı `8081`. `thy-case-llm deploy`, üretim için Dockerfile ve platform dosyalarını hızlıca eklemenize yardımcı olur.
+
+- **`railway`:** `Dockerfile` + `railway.toml` (build bağlamı repo kökü).
+- **`fly`:** Aynı `Dockerfile` + `fly.toml`.
+- **`vercel`:** Bu repo Go API’yi Vercel’de “drop-in” sunucu gibi iddia etmez; örnek **`vercel.json`** (harici API’ye rewrite) ve **`deploy/VERCEL.md`** rehberi üretir. Asıl API’yi Railway/Fly vb. üzerinde çalıştırmanız beklenir.
+
+```bash
+thy-case-llm deploy list
+thy-case-llm deploy show railway
+thy-case-llm deploy init railway --dry-run
+thy-case-llm deploy init fly --out .
+thy-case-llm deploy init vercel --api-base-url https://api.ornek.com
+```
+
+Mevcut dosyaların üzerine yazmak için `--force`; sadece önizleme için `--dry-run`.
 
 ### Kullanım Örnekleri
 

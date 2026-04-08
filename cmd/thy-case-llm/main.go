@@ -9,9 +9,10 @@ import (
 	"strings"
 
 	"github.com/messivite/go-thy-case-study-backend/internal/config"
+	"github.com/messivite/go-thy-case-study-backend/internal/deploy"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func main() {
 	loadDotEnv()
@@ -35,6 +36,12 @@ func main() {
 			os.Exit(1)
 		}
 		handleTemplates(args[1], args[2:])
+	case "deploy":
+		if len(args) < 2 {
+			printDeployUsage()
+			os.Exit(1)
+		}
+		handleDeploy(args[1], args[2:])
 	case "doctor":
 		cmdDoctor()
 	case "version":
@@ -380,6 +387,101 @@ func cmdTemplatesShow(name string) {
 }
 
 // ---------------------------------------------------------------------------
+// deploy
+// ---------------------------------------------------------------------------
+
+func handleDeploy(subcmd string, args []string) {
+	switch subcmd {
+	case "list":
+		if err := deploy.List(os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+	case "show":
+		if len(args) < 1 {
+			printDeployUsage()
+			os.Exit(1)
+		}
+		if err := deploy.Show(os.Stdout, args[0]); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+	case "init":
+		if len(args) < 1 {
+			printDeployUsage()
+			os.Exit(1)
+		}
+		id := args[0]
+		opts := deploy.InitOptions{OutDir: "."}
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--dry-run":
+				opts.DryRun = true
+			case "--force":
+				opts.Force = true
+			case "--out":
+				if i+1 >= len(args) {
+					fmt.Fprintln(os.Stderr, "deploy init: --out için dizin gerekli")
+					os.Exit(1)
+				}
+				i++
+				opts.OutDir = args[i]
+			case "--module":
+				if i+1 >= len(args) {
+					fmt.Fprintln(os.Stderr, "deploy init: --module için değer gerekli")
+					os.Exit(1)
+				}
+				i++
+				opts.Module = args[i]
+			case "--port":
+				if i+1 >= len(args) {
+					fmt.Fprintln(os.Stderr, "deploy init: --port için değer gerekli")
+					os.Exit(1)
+				}
+				i++
+				opts.Port = args[i]
+			case "--main-package":
+				if i+1 >= len(args) {
+					fmt.Fprintln(os.Stderr, "deploy init: --main-package için değer gerekli")
+					os.Exit(1)
+				}
+				i++
+				opts.MainPackage = args[i]
+			case "--health-path":
+				if i+1 >= len(args) {
+					fmt.Fprintln(os.Stderr, "deploy init: --health-path için değer gerekli")
+					os.Exit(1)
+				}
+				i++
+				opts.HealthPath = args[i]
+			case "--api-base-url":
+				if i+1 >= len(args) {
+					fmt.Fprintln(os.Stderr, "deploy init: --api-base-url için değer gerekli")
+					os.Exit(1)
+				}
+				i++
+				opts.APIBaseURL = args[i]
+			default:
+				fmt.Fprintf(os.Stderr, "deploy init: bilinmeyen argüman: %s\n", args[i])
+				printDeployUsage()
+				os.Exit(1)
+			}
+		}
+		if err := deploy.Init(id, opts); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		if !opts.DryRun {
+			fmt.Fprintf(os.Stdout, "deploy init %s tamam (çıktı dizini: %s)\n", id, opts.OutDir)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "bilinmeyen deploy alt-komutu: %s\n", subcmd)
+		printDeployUsage()
+		os.Exit(1)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // doctor
 // ---------------------------------------------------------------------------
 
@@ -554,9 +656,31 @@ Komutlar:
   provider validate             Provider yapılandırmasını doğrula
   templates list                Mevcut provider template'lerini listele
   templates show <name>         Template detayını göster
+  deploy list                   Deploy hedeflerini listele (railway, fly, vercel, …)
+  deploy show <id>              Bir hedefin açıklaması ve üreteceği dosyalar
+  deploy init <id> [flags]      Şablon dosyalarını repoya yazar (Dockerfile, fly.toml, …)
   doctor                        Hızlı sistem sağlık kontrolü
   version                       Sürüm bilgisi
   help                          Bu yardım mesajı`)
+}
+
+func printDeployUsage() {
+	fmt.Println(`Kullanım:
+  thy-case-llm deploy list
+  thy-case-llm deploy show <id>
+  thy-case-llm deploy init <id> [flags]
+
+id: railway | fly | vercel (thy-case-llm deploy list)
+
+init flags:
+  --out <dir>           Çıktı kökü (varsayılan: .)
+  --dry-run             Dosya yazma; içeriği stdout'a yaz
+  --force               Var olan çıktı dosyalarının üzerine yaz
+  --module <path>       go.mod module satırı yerine sabit modül adı
+  --port <port>         Şablondaki PORT / internal_port
+  --main-package <path> go build paket yolu (örn. ./cmd/api)
+  --health-path <path>  Sağlık endpoint'i (örn. /health)
+  --api-base-url <url>  vercel şablonunda rewrite hedefi (sonunda / olmasın)`)
 }
 
 func printProviderUsage() {
