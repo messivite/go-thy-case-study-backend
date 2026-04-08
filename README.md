@@ -42,12 +42,11 @@
 
 # Thy Case Study Backend
 
-Go tabanlı bir case-study backend projesi. Supabase Auth ve JWT claim tabanlı rol kontrolü kullanır; API yönlendirme/guard katmanı `gosupabase` ile çalışır.
+THY case study için yazdığım Go backend. Auth Supabase, roller JWT claim üzerinden; route’lar ve guard’lar `gosupabase` ile.
 
 ## Built With gosupabase
 
-Bu backend, benim geliştirdiğim `gosupabase` paketi üzerine kuruludur.
-Paket; YAML-first endpoint yönetimi, Supabase JWT doğrulaması ve role-based route guard akışını sağlar.
+`gosupabase` paketini ben yazdım; bu repo onun üstünde. YAML’dan endpoint, JWT doğrulama, role guard işi oradan geliyor.
 
 - GitHub: [github.com/messivite/gosupabase](https://github.com/messivite/gosupabase)
 - Go Package: [pkg.go.dev/github.com/messivite/gosupabase](https://pkg.go.dev/github.com/messivite/gosupabase)
@@ -55,12 +54,12 @@ Paket; YAML-first endpoint yönetimi, Supabase JWT doğrulaması ve role-based r
 ## Mimari Özeti
 
 - **Auth:** Supabase access token (`Authorization: Bearer <jwt>`)
-- **Role modeli:** `public.user_roles` tablosu -> `custom_access_token_hook` -> JWT `claims.roles`
-- **Rol kontrolü:** `api.yaml` içindeki `roles: [...]` alanları
-- **Profil modeli:** `public.profiles` (`auth.users.id` ile 1:1)
-- **Sohbet kalıcılığı:** Şu an bellek içi (in-memory) repository kullanılıyor (DB DSN gerektirmez)
-- **Veritabanı:** Supabase Postgres (Auth tabloları + `public.profiles` + `public.user_roles` + RLS/policy)
-- **LLM Provider Yönetimi:** `providers.yaml` + `.env` ile ayrıştırılmış konfig, `thy-case-llm` CLI ile yönetim
+- **Roller:** `public.user_roles` → hook → JWT’de `claims.roles`
+- **Route rolleri:** `api.yaml` içindeki `roles: [...]`
+- **Profil:** `public.profiles`, `auth.users` ile 1:1
+- **Chat:** Varsayılan Supabase Postgres (REST + service role); istersen `CHAT_PERSISTENCE=memory` ile sadece RAM
+- **DB:** Supabase Postgres (auth + `profiles` + `user_roles` + chat tabloları, RLS)
+- **LLM:** `providers.yaml` + `.env`, yönetim için `thy-case-llm`
 
 ## Proje Yapısı
 
@@ -82,12 +81,14 @@ internal/
     openai.go              → OpenAI adapter
     gemini.go              → Gemini adapter
     helpers.go             → Ortak yardımcı fonksiyonlar
-  config/                  → Konfig yükleme
-    provider.go            → providers.yaml CRUD işlemleri
+  config/                  → Konfig + built-in LLM şablonları
+    provider.go            → providers.yaml
+    templates.go           → CLI template registry (openai, gemini, …)
   chat/                    → HTTP handler katmanı
     handler.go             → REST + SSE endpoint'leri
   repo/                    → Repository implementasyonları
-    memory_repository.go   → Bellek içi (in-memory) depo
+    memory_repository.go   → RAM (CHAT_PERSISTENCE=memory)
+    supabase_repository.go → Postgres (Supabase REST, varsayılan)
   auth/                    → JWT doğrulama
     auth.go                → Middleware, context helpers
     supabase_adapter.go    → Supabase JWT/JWKS adapter
@@ -100,7 +101,7 @@ supabase/                  → Supabase CLI config, functions, migrations
 
 ## Provider Konfigürasyonu
 
-LLM provider yönetimi iki katmanlı ayrışma prensibiyle çalışır:
+Anahtarlar repoda durmasın diye ikiye ayırdım:
 
 | Dosya | İçerik | Git'e eklenir? |
 |-------|--------|----------------|
@@ -120,11 +121,11 @@ providers:
     env_key: GEMINI_API_KEY
 ```
 
-Sunucu başlarken `providers.yaml` okunur, her provider için ilgili env key kontrol edilir. Anahtarı eksik olan provider devre dışı bırakılır (uyarı loglanır).
+Sunucu açılınca `providers.yaml` okunuyor; env’de key yoksa o provider atlanıyor, log’a uyarı düşüyor.
 
 ## thy-case-llm CLI
 
-LLM provider yönetimi için komut satırı aracı.
+Provider’ları terminalden yönetmek için küçük bir araç.
 
 ```bash
 go run ./cmd/thy-case-llm help
@@ -137,15 +138,39 @@ cd /Users/kullaniciAdiniz/Projects/thy-case-study-backend
 go install ./cmd/thy-case-llm
 ```
 
+### Önemli not (güncel binary)
+
+`templates list`, `templates show`, `provider add --template …` Faz 2’den beri var. Eski `go install` binary’si kalırsa şunu görürsün:
+
+```text
+unknown command: templates
+```
+
+`thy-case-llm help` içinde de `templates` yoksa PATH’teki binary eski demektir.
+
+**Ne yapayım:** Projede tekrar `go install`, `$(go env GOPATH)/bin` PATH’te olsun:
+
+```bash
+cd /Users/kullaniciAdiniz/Projects/thy-case-study-backend
+go install ./cmd/thy-case-llm
+which thy-case-llm
+thy-case-llm version
+thy-case-llm templates list
+```
+
+Install istemezsen: `go run ./cmd/thy-case-llm templates list`.
+
 ### Komutlar
 
 | Komut | Açıklama |
 |-------|----------|
-| `provider add` | Yeni provider ekle (interaktif veya `--name`, `--model`, `--env-key` flag'leri ile) |
+| `provider add` | Yeni provider ekle (interaktif veya `--name`, `--model`, `--env-key` flag'leri ile; `--template <name>` ile hazır şablon) |
 | `provider list` | Kayıtlı provider'ları listele (varsayılan, model, env durumu) |
 | `provider remove <name>` | Provider'ı kaldır |
 | `provider set-default <name>` | Varsayılan provider'ı değiştir |
 | `provider validate` | Tüm provider'ların env key kontrolünü yap |
+| `templates list` | Yerleşik provider şablonlarını listele (openai, gemini, anthropic, …) |
+| `templates show <name>` | Bir şablonun detayını göster (model, env key, base URL) |
 | `doctor` | Provider + env + config için hızlı sağlık kontrolü |
 
 ### Kullanım Örnekleri
@@ -154,8 +179,15 @@ go install ./cmd/thy-case-llm
 # Provider listele
 thy-case-llm provider list
 
+# Hazır şablonları listele ve detay gör
+thy-case-llm templates list
+thy-case-llm templates show openai
+
 # Yeni provider ekle (interaktif)
 thy-case-llm provider add
+
+# Hazır şablonla ekle (ör. OpenAI)
+thy-case-llm provider add --template openai --set-default
 
 # Yeni provider ekle (flag ile)
 thy-case-llm provider add --name openai --model gpt-4o --env-key OPENAI_API_KEY
@@ -175,7 +207,7 @@ thy-case-llm provider remove gemini
 
 ### Olası Hata ve Çözüm
 
-`zsh: command not found: thy-case-llm` hatası alırsanız:
+`zsh: command not found: thy-case-llm` çıkarsa:
 
 1) Binary'yi kurun:
 
@@ -191,7 +223,7 @@ echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-3) Alternatif olarak kurulum gerektirmeden çalıştırın:
+3) Ya da direkt:
 
 ```bash
 go run ./cmd/thy-case-llm doctor
@@ -201,7 +233,8 @@ go run ./cmd/thy-case-llm doctor
 
 `.env.example`:
 
-- `PORT` (varsayılan `8081`)
+- `PORT` (default `8081`)
+- `CHAT_PERSISTENCE` — yazmazsan `supabase`; `memory` dersen RAM. `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` eksikse yine memory’ye düşüyor (`cmd/api/main.go`).
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
@@ -227,12 +260,12 @@ go run ./cmd/thy-case-llm doctor
 
 ## Auth + Rol Akışı
 
-1. Kullanıcı giriş yapar ve Supabase access token alır.
-2. `custom_access_token_hook`, `public.user_roles` tablosunu okuyup token içindeki `claims.roles` alanını yazar.
-3. API, `gosupabase` middleware ile JWT'yi doğrular.
-4. Endpointte `roles: [...]` varsa token rolleri ile eşleşme kontrolü yapılır; eşleşmezse `403` döner.
+1. Login → Supabase access token.
+2. Hook `user_roles`’a bakıp `claims.roles`’u token’a yazıyor.
+3. API JWT’yi `gosupabase` ile doğruluyor.
+4. `api.yaml`’da `roles` varsa token’daki rollerle eşleşmiyorsa `403`.
 
-Not: Rol değişikliğinden sonra yeni token alınması gerekir (logout/login veya token refresh).
+Rol değişince eski token yetmez; yenile veya tekrar login.
 
 ## Rol Atama
 
@@ -279,27 +312,26 @@ where user_id = 'USER_UUID_HERE'::uuid
 
 ## Rol Değişimi Nasıl Tetikleniyor?
 
-Rol yönetimi akışı otomatik çalışır:
+1. `user_roles`’a insert/update/delete.
+2. `trg_user_roles_sync_auth_metadata` çalışıyor.
+3. `auth.users.raw_app_meta_data.roles` güncelleniyor.
+4. Yeni token’da hook yine `user_roles`’tan okuyup `claims.roles` yazıyor.
 
-1. `public.user_roles` tablosuna `insert/update/delete` yapılır.
-2. `trg_user_roles_sync_auth_metadata` trigger'ı tetiklenir.
-3. Trigger, `auth.users.raw_app_meta_data.roles` alanını senkronlar.
-4. `custom_access_token_hook`, yeni token üretiminde `public.user_roles` tablosunu okuyup `claims.roles` alanını yazar.
-
-Not: Token immutable olduğu için mevcut token değişmez. Rol değişikliği sonrası kullanıcı yeni token almalıdır (logout/login veya refresh).
+Eski token’ın içi değişmez; rol değişince mutlaka yeni token lazım.
 
 ## Profiles Akışı
 
-- `auth.users` kaydı oluştuğunda trigger ile `public.profiles` satırı açılır.
-- `profiles.is_anonymous`, `auth.users.is_anonymous` alanından doldurulur/güncellenir.
-- `display_name`, `avatar_url` gibi uygulama alanları uygulama katmanından update edilir.
+- User oluşunca trigger ile `profiles` satırı açılıyor.
+- `is_anonymous` auth’taki flag’ten geliyor.
+- `display_name`, `avatar_url` vs. app’ten update.
 
 ## PostgreSQL (Supabase) Veri Modeli
 
-- `auth.users`: Supabase Auth sistem tablosu (kayıt/giriş kimlik kaynağı)
-- `public.profiles`: Uygulama profil verisi (`auth.users.id` ile birebir)
-- `public.user_roles`: Kullanıcıya birden fazla rol atamak için ilişki tablosu
-- RLS/policy kuralları Postgres seviyesinde uygulanır, API tarafı JWT claim ile yetki doğrular
+- `auth.users` — kimlik
+- `public.profiles` — profil, user ile 1:1
+- `public.user_roles` — çoklu rol
+- Chat için `chat_sessions` / `chat_messages` (migration’larda)
+- RLS Postgres’te; API tarafında JWT
 
 ## Supabase Kurulum Komutları
 
@@ -323,14 +355,7 @@ npx supabase functions deploy register-push-token --project-ref <PROJECT_REF>
 
 ## CI ve Codecov
 
-Bu proje, PR kalite kontrolü için GitHub Actions + Codecov kullanır.
-
-- CI adımları: `go mod tidy` kontrolü, `go build`, `go test`, `go vet`
-- Coverage: test sonrası `coverage.out` üretilir ve Codecov'a yüklenir
-- PR yönetimi: `codecov/patch` ve CI check'leri zorunlu kural olarak kullanılabilir
-- Amaç: merge öncesi test geçişini ve kapsam düşüşlerini görünür kılmak
-
-Codecov entegrasyonunun ilk doğrulama PR'ı: [trigger CI checkes #1](https://github.com/messivite/go-thy-case-study-backend/pull/1)
+GitHub Actions’ta build + test + vet; coverage `coverage.out` ile Codecov’a gidiyor. PR’da check’leri zorunlu tutabilirsin (codecov/patch vs.). İlk kurulum PR’ı: [trigger CI checkes #1](https://github.com/messivite/go-thy-case-study-backend/pull/1)
 
 ## Yerelde Çalıştırma
 
@@ -407,7 +432,24 @@ curl -N -X POST "http://localhost:8081/api/chats/<CHAT_ID>/stream" \
 
 ## Notlar
 
-- `supabase/migrations` altında bazı migration dosyaları geçiş/legacy amacıyla tutuluyor.
-- Kaynak rol modeli olarak `public.user_roles` kullanılmalıdır.
-- `public.users` yeni geliştirmede kullanılmaz; profil için `public.profiles` kullanılır.
-- **Faz 1:** DDD katman ayrımı yapıldı (domain → application → infrastructure). Provider yönetimi `providers.yaml` + `thy-case-llm` CLI ile standartlaştırıldı. Yeni provider eklemek sadece adapter dosyası + registry kaydı gerektirir.
+- `supabase/migrations` içinde bazı dosyalar eski geçişlerden kaldı, silmiyorum referans için.
+- Rol kaynağı: `public.user_roles`.
+- Yeni iş için `public.users` değil, `public.profiles`.
+- **Faz 1:** Domain / application / infra ayrımı, `providers.yaml` + `thy-case-llm`, yeni LLM için adapter + registry.
+- **Faz 2:** Template CLI (`templates list/show`), gerçek OpenAI/Gemini çağrıları, chat’i Postgres’e yazma, usage normalize, log tarafı, retry/timeout, provider hatalarını HTTP’ye map etme.
+
+### Faz 3 — sonra bakacağımız işler
+
+#### Self-hosted / özel endpoint
+
+Kendi makinemde veya şirket gateway’inde model çalıştırırsam şu an kod sadece OpenAI’nin sabit URL’ine gidiyor. Faz 3’te base URL’yi env veya `providers.yaml`’dan verebilir hale getirmek istiyorum (vLLM, LiteLLM proxy vs.). Gerekirse ek header. CLI’da da bu endpoint’i tanımlama. “Sadece farklı model id” ile “farklı host” ayrımını dokümanda net yazarım.
+
+#### Token kotası — günlük / haftalık, global + kullanıcıya özel
+
+OpenAI’nin döndürdüğü `usage` token’larını kullanıp ürün içi limit koymak:
+
+- Proje default’u: günlük + haftalık limit tek yerde (tablo veya settings kaydı); yeni üye için başlangıç değeri buradan.
+- Kullanıcıya özel: ayrı tablo, `user_id` FK; günlük/haftalık override.
+- Register’da default’u kullanıcı kotasına yazan trigger veya hook.
+- İstekte (veya LLM cevabı geldikten sonra) sayaç güncelle; limit dolunca anlamlı `429` + `code`.
+- Admin panelden user bulup kotayı düzenleme; satır yoksa default’tan üretme kuralı — detayını sonra netleştiririz.
