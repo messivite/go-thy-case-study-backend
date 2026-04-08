@@ -196,28 +196,12 @@ Install istemezsen: `go run ./cmd/thy-case-llm templates list`.
 | `provider validate` | Tüm provider'ların env key kontrolünü yap |
 | `templates list` | Yerleşik provider şablonlarını listele (openai, gemini, anthropic, …) |
 | `templates show <name>` | Bir şablonun detayını göster (model, env key, base URL) |
+| `doctor` | Provider + env + config için hızlı sağlık kontrolü |
 | `deploy list` | Üretilebilir deploy hedeflerini listele (`railway`, `fly`, `vercel`) |
 | `deploy show <id>` | Hedef açıklaması ve yazılacak dosya yolları |
 | `deploy init <id>` | Şablonları repoya yazar (`Dockerfile`, `fly.toml`, örnek `vercel.json`, …) |
-| `doctor` | Provider + env + config için hızlı sağlık kontrolü |
 
-### Deploy şablonları (Railway / Fly / Vercel)
-
-API `cmd/api` altında çalışır; `PORT` varsayılanı `8081`. `thy-case-llm deploy`, üretim için Dockerfile ve platform dosyalarını hızlıca eklemenize yardımcı olur.
-
-- **`railway`:** `Dockerfile` + `railway.toml` (build bağlamı repo kökü).
-- **`fly`:** Aynı `Dockerfile` + `fly.toml`.
-- **`vercel`:** Bu repo Go API’yi Vercel’de “drop-in” sunucu gibi iddia etmez; örnek **`vercel.json`** (harici API’ye rewrite) ve **`deploy/VERCEL.md`** rehberi üretir. Asıl API’yi Railway/Fly vb. üzerinde çalıştırmanız beklenir.
-
-```bash
-thy-case-llm deploy list
-thy-case-llm deploy show railway
-thy-case-llm deploy init railway --dry-run
-thy-case-llm deploy init fly --out .
-thy-case-llm deploy init vercel --api-base-url https://api.ornek.com
-```
-
-Mevcut dosyaların üzerine yazmak için `--force`; sadece önizleme için `--dry-run`.
+Deploy komutunun tam açıklaması ve örnekler [en alttaki Deploy bölümünde](#deploy).
 
 ### Kullanım Örnekleri
 
@@ -581,3 +565,49 @@ OpenAI’nin döndürdüğü `usage` token’larını kullanıp ürün içi limi
 - Register’da default’u kullanıcı kotasına yazan trigger veya hook.
 - İstekte (veya LLM cevabı geldikten sonra) sayaç güncelle; limit dolunca anlamlı `429` + `code`.
 - Admin panelden user bulup kotayı düzenleme; satır yoksa default’tan üretme kuralı — detayını sonra netleştiririz.
+
+## Deploy
+
+**thy-case-llm** ile üretim dosyalarını repoya yazdırmak: `thy-case-llm deploy` (CLI **v0.3.0+**; `thy-case-llm version`, eskiyse `go install ./cmd/thy-case-llm`).
+
+API süreci **`cmd/api`**; dinlediği port varsayılan **`8081`** (`PORT` env). Docker build **her zaman repo kökünden** yapılmalı (`docker build -f Dockerfile .`).
+
+### Hedefler (`deploy list`)
+
+| `id` | Üretilen dosyalar | Not |
+|------|-------------------|-----|
+| `railway` | `Dockerfile`, `railway.toml` | Railway’de health check path şablonda `/health` |
+| `fly` | `Dockerfile`, `fly.toml` | Dockerfile `railway` ile aynı şablondan |
+| `vercel` | `vercel.json`, `deploy/VERCEL.md` | Go API’yi Vercel’de “sunucu” gibi kullanma iddiası yok; örnek **rewrite** ile istekleri Railway/Fly’daki API’ye yönlendirme |
+
+### Örnek komutlar
+
+```bash
+# Hedefleri listele
+thy-case-llm deploy list
+
+# Bir hedefin açıklaması + hangi dosyaların yazılacağı
+thy-case-llm deploy show railway
+thy-case-llm deploy show vercel
+
+# Önizleme (disk'e yazmaz, stdout'a basar)
+thy-case-llm deploy init railway --dry-run
+
+# Repo köküne yaz (mevcut dosya varsa hata verir)
+thy-case-llm deploy init railway
+thy-case-llm deploy init fly
+
+# Üzerine yaz
+thy-case-llm deploy init fly --force
+
+# Başka dizine yaz (ör. monorepo alt paketi)
+thy-case-llm deploy init railway --out ./backend
+
+# Vercel rewrite hedefi (sonunda / olmasın)
+thy-case-llm deploy init vercel --api-base-url https://api.ornek.com
+
+# go.mod yoksa veya modül adını elle vermek için
+thy-case-llm deploy init railway --module github.com/senin/projen
+```
+
+Yaygın flag’ler: `--dry-run`, `--force`, `--out <dir>`, `--port`, `--main-package`, `--health-path`, `--api-base-url` (vercel), `--module`. Tam liste: `thy-case-llm deploy` (alt komut yoksa yardım metni).

@@ -656,10 +656,10 @@ Komutlar:
   provider validate             Provider yapılandırmasını doğrula
   templates list                Mevcut provider template'lerini listele
   templates show <name>         Template detayını göster
+  doctor                        Hızlı sistem sağlık kontrolü
   deploy list                   Deploy hedeflerini listele (railway, fly, vercel, …)
   deploy show <id>              Bir hedefin açıklaması ve üreteceği dosyalar
   deploy init <id> [flags]      Şablon dosyalarını repoya yazar (Dockerfile, fly.toml, …)
-  doctor                        Hızlı sistem sağlık kontrolü
   version                       Sürüm bilgisi
   help                          Bu yardım mesajı`)
 }
