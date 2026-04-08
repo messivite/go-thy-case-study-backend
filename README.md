@@ -211,3 +211,5 @@ go run ./cmd/api
 - `supabase/migrations` altında bazı migration dosyaları geçiş/legacy amacıyla tutuluyor.
 - Kaynak rol modeli olarak `public.user_roles` kullanılmalıdır.
 - `public.users` yeni geliştirmede kullanılmaz; profil için `public.profiles` kullanılır.
+
+-
