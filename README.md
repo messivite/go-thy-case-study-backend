@@ -5,17 +5,31 @@
   <a href="https://pkg.go.dev/github.com/messivite/gosupabase">
     <img src="https://pkg.go.dev/badge/github.com/messivite/gosupabase.svg" alt="Go Reference: gosupabase" />
   </a>
+  <img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white" alt="Go Version" />
+  <img src="https://img.shields.io/badge/Supabase-JWT-3ECF8E?logo=supabase&logoColor=white" alt="Supabase JWT" />
+  <img src="https://img.shields.io/badge/JWKS-Supported-4C8BF5" alt="JWKS" />
+  <img src="https://img.shields.io/badge/Hot%20Reload-gosupabase%20dev-orange" alt="Hot Reload" />
   <a href="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/ci.yml">
     <img src="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/ci.yml/badge.svg" alt="CI" />
+  </a>
+  <a href="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/messivite/go-thy-case-study-backend/ci.yml?label=Tests" alt="Tests" />
   </a>
   <a href="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/release.yml">
     <img src="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/release.yml/badge.svg" alt="Release" />
   </a>
+  <img src="https://img.shields.io/badge/Coverage-Tests%20Enabled-brightgreen" alt="Coverage" />
   <a href="https://github.com/messivite/gosupabase/releases">
     <img src="https://img.shields.io/github/v/release/messivite/gosupabase?label=gosupabase%20release" alt="gosupabase release" />
   </a>
   <a href="https://github.com/messivite/gosupabase/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/messivite/gosupabase" alt="License" />
+  </a>
+  <img src="https://img.shields.io/badge/Router-chi-34495E" alt="Router" />
+  <img src="https://img.shields.io/badge/Codegen-YAML%20Driven-7D3C98" alt="Codegen" />
+  <img src="https://img.shields.io/badge/YAML-First-1ABC9C" alt="YAML First" />
+  <a href="https://github.com/messivite/go-thy-case-study-backend/commits/main">
+    <img src="https://img.shields.io/github/last-commit/messivite/go-thy-case-study-backend" alt="Last Commit" />
   </a>
 </p>
 
