@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/turkiye-header.svg" alt="THY Case Study Backend" width="100%" />
+  <img src="./assets/turkiye-header.svg?v=2" alt="THY Case Study Backend" width="100%" />
 </p>
 <p align="center">
   <a href="https://pkg.go.dev/github.com/messivite/gosupabase">
