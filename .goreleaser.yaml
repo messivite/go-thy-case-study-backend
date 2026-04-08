@@ -43,6 +43,7 @@ archives:
       {{- .Arch }}
     files:
       - README.md
+      - CHANGELOG.md
 
 changelog:
   sort: asc

@@ -27,13 +27,15 @@ func NewMemoryRepository() *MemoryRepository {
 	}
 }
 
-func (r *MemoryRepository) CreateChatSession(ctx context.Context, userID, title string) (domain.ChatSession, error) {
+func (r *MemoryRepository) CreateChatSession(ctx context.Context, userID, title, defaultProvider, defaultModel string) (domain.ChatSession, error) {
 	id := uuid.New()
 	session := domain.ChatSession{
-		ID:        id,
-		UserID:    userID,
-		Title:     title,
-		CreatedAt: time.Now().UTC(),
+		ID:              id,
+		UserID:          userID,
+		Title:           title,
+		CreatedAt:       time.Now().UTC(),
+		DefaultProvider: defaultProvider,
+		DefaultModel:    defaultModel,
 	}
 
 	r.mu.Lock()
@@ -83,7 +85,26 @@ func (r *MemoryRepository) GetChatSessionByID(ctx context.Context, sessionID str
 	return session, nil
 }
 
-func (r *MemoryRepository) SaveMessage(ctx context.Context, sessionID, userID string, role domain.Role, content string) (domain.ChatMessage, error) {
+func (r *MemoryRepository) UpdateSessionLastLLM(ctx context.Context, sessionID, provider, model string) error {
+	id, err := uuid.Parse(sessionID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	s, ok := r.sessions[id]
+	if !ok {
+		return domain.ErrSessionNotFound
+	}
+	s.LastProvider = provider
+	s.LastModel = model
+	r.sessions[id] = s
+	return nil
+}
+
+func (r *MemoryRepository) SaveMessage(ctx context.Context, sessionID, userID string, role domain.Role, content, provider, model string) (domain.ChatMessage, error) {
 	sessionUUID, err := uuid.Parse(sessionID)
 	if err != nil {
 		return domain.ChatMessage{}, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
@@ -96,6 +117,8 @@ func (r *MemoryRepository) SaveMessage(ctx context.Context, sessionID, userID st
 		Role:      role,
 		Content:   content,
 		CreatedAt: time.Now().UTC(),
+		Provider:  provider,
+		Model:     model,
 	}
 
 	r.mu.Lock()

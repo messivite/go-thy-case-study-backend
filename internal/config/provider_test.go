@@ -16,7 +16,7 @@ func TestProvidersConfigAddRemove(t *testing.T) {
 		t.Errorf("expected default 'openai', got %q", cfg.Default)
 	}
 
-	if err := cfg.AddProvider(ProviderEntry{Name: "gemini", Model: "gemini-2.0-flash", EnvKey: "GEMINI_API_KEY"}); err != nil {
+	if err := cfg.AddProvider(ProviderEntry{Name: "gemini", Model: "gemini-2.5-flash", EnvKey: "GEMINI_API_KEY"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(cfg.Providers) != 2 {

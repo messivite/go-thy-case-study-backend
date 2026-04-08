@@ -4,5 +4,5 @@ providers:
       model: gpt-4o
       env_key: OPENAI_API_KEY
     - name: gemini
-      model: gemini-2.0-flash
+      model: gemini-2.5-flash
       env_key: GEMINI_API_KEY

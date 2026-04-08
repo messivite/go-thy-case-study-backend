@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/messivite/go-thy-case-study-backend/internal/app"
 	usecase "github.com/messivite/go-thy-case-study-backend/internal/application/chat"
@@ -12,11 +14,32 @@ import (
 	"github.com/messivite/go-thy-case-study-backend/internal/chat"
 	"github.com/messivite/go-thy-case-study-backend/internal/config"
 	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
+	"github.com/messivite/go-thy-case-study-backend/internal/observability"
 	"github.com/messivite/go-thy-case-study-backend/internal/provider"
 	"github.com/messivite/go-thy-case-study-backend/internal/repo"
 )
 
 func main() {
+	if logPath := os.Getenv("OBSERVABILITY_LOG_FILE"); logPath != "" {
+		if err := observability.EnableFileLog(logPath); err != nil {
+			log.Fatalf("OBSERVABILITY_LOG_FILE: %v", err)
+		}
+		defer observability.CloseFileLog()
+		log.Printf("observability: JSONL logs -> %s", logPath)
+	}
+
+	shutdownTracing, err := observability.InitTracing(context.Background())
+	if err != nil {
+		log.Fatalf("OpenTelemetry: %v", err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracing(ctx); err != nil {
+			log.Printf("OpenTelemetry shutdown: %v", err)
+		}
+	}()
+
 	port := envOrDefault("PORT", envOrDefault("APP_PORT", "8081"))
 	roleClaimKey := envOrDefault("SUPABASE_ROLE_CLAIM_KEY", "role")
 
@@ -50,10 +73,11 @@ func main() {
 	chatHandler := chat.NewHandler(uc)
 
 	server := app.NewServer(authService, chatHandler)
+	handler := observability.HTTPHandler("thy-api", server.Handler())
 
 	addr := fmt.Sprintf(":%s", port)
 	log.Printf("starting server on %s", addr)
-	if err := http.ListenAndServe(addr, server.Handler()); err != nil {
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("server exited: %v", err)
 	}
 }
@@ -102,8 +126,8 @@ func buildRegistryFromEnv() *provider.Registry {
 		})
 	}
 	if key := os.Getenv("GEMINI_API_KEY"); key != "" {
-		registry.Register(provider.NewGeminiProvider(key, "gemini-2.0-flash"), provider.ProviderMeta{
-			Name: "gemini", DefaultModel: "gemini-2.0-flash", RequiredEnvKey: "GEMINI_API_KEY", SupportsStream: true,
+		registry.Register(provider.NewGeminiProvider(key, "gemini-2.5-flash"), provider.ProviderMeta{
+			Name: "gemini", DefaultModel: "gemini-2.5-flash", RequiredEnvKey: "GEMINI_API_KEY", SupportsStream: true,
 		})
 	}
 	return registry

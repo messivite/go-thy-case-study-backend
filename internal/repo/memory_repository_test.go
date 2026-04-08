@@ -11,7 +11,7 @@ func TestMemoryRepositorySessionLifecycle(t *testing.T) {
 	r := NewMemoryRepository()
 	ctx := context.Background()
 
-	session, err := r.CreateChatSession(ctx, "user-1", "hello")
+	session, err := r.CreateChatSession(ctx, "user-1", "hello", "", "")
 	if err != nil {
 		t.Fatalf("create session failed: %v", err)
 	}
@@ -23,18 +23,29 @@ func TestMemoryRepositorySessionLifecycle(t *testing.T) {
 	if got.UserID != "user-1" {
 		t.Fatalf("expected user-1, got %s", got.UserID)
 	}
+
+	if err := r.UpdateSessionLastLLM(ctx, session.ID.String(), "gemini", "gemini-2.5-flash"); err != nil {
+		t.Fatalf("update last llm: %v", err)
+	}
+	got, err = r.GetChatSessionByID(ctx, session.ID.String())
+	if err != nil {
+		t.Fatalf("get session after update: %v", err)
+	}
+	if got.LastProvider != "gemini" || got.LastModel != "gemini-2.5-flash" {
+		t.Fatalf("last llm: got provider=%q model=%q", got.LastProvider, got.LastModel)
+	}
 }
 
 func TestMemoryRepositoryMessages(t *testing.T) {
 	r := NewMemoryRepository()
 	ctx := context.Background()
 
-	session, err := r.CreateChatSession(ctx, "user-2", "chat")
+	session, err := r.CreateChatSession(ctx, "user-2", "chat", "", "")
 	if err != nil {
 		t.Fatalf("create session failed: %v", err)
 	}
 
-	_, err = r.SaveMessage(ctx, session.ID.String(), "user-2", domain.RoleUser, "hi")
+	_, err = r.SaveMessage(ctx, session.ID.String(), "user-2", domain.RoleUser, "hi", "", "")
 	if err != nil {
 		t.Fatalf("save message failed: %v", err)
 	}

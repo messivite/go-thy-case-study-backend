@@ -26,11 +26,15 @@ func NewHandler(uc *usecase.UseCase) *Handler {
 }
 
 type createSessionRequest struct {
-	Title string `json:"title"`
+	Title    string `json:"title"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 type createSessionResponse struct {
-	ID string `json:"id"`
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
 }
 
 type postMessageRequest struct {
@@ -41,8 +45,10 @@ type postMessageRequest struct {
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role     string `json:"role"`
+	Content  string `json:"content"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 type assistantResponse struct {
@@ -51,14 +57,18 @@ type assistantResponse struct {
 }
 
 type chatDetailResponse struct {
-	ID       string        `json:"id"`
-	Title    string        `json:"title"`
-	Messages []chatMessage `json:"messages"`
+	ID        string        `json:"id"`
+	Title     string        `json:"title"`
+	Provider  string        `json:"provider"`
+	Model     string        `json:"model"`
+	Messages  []chatMessage `json:"messages"`
 }
 
 type chatListItemResponse struct {
 	ID                 string `json:"id"`
 	Title              string `json:"title"`
+	Provider           string `json:"provider"`
+	Model              string `json:"model"`
 	CreatedAt          string `json:"createdAt"`
 	UpdatedAt          string `json:"updatedAt"`
 	LastMessagePreview string `json:"lastMessagePreview"`
@@ -115,9 +125,12 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	items := make([]chatListItemResponse, 0, len(sessions))
 	for _, s := range sessions {
 		lastPreview, updatedAt := h.uc.GetSessionSummary(r.Context(), s.ID.String())
+		lp, lm := sessionLLMSummary(s)
 		items = append(items, chatListItemResponse{
 			ID:                 s.ID.String(),
 			Title:              s.Title,
+			Provider:           lp,
+			Model:              lm,
 			CreatedAt:          s.CreatedAt.Format(timeFormat),
 			UpdatedAt:          updatedAt.Format(timeFormat),
 			LastMessagePreview: lastPreview,
@@ -139,13 +152,17 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.uc.CreateSession(r.Context(), user.UserID, req.Title)
+	session, err := h.uc.CreateSession(r.Context(), user.UserID, req.Title, req.Provider, req.Model)
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, createSessionResponse{ID: session.ID.String()})
+	writeJSON(w, http.StatusCreated, createSessionResponse{
+		ID:       session.ID.String(),
+		Provider: session.DefaultProvider,
+		Model:    session.DefaultModel,
+	})
 }
 
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
@@ -178,9 +195,18 @@ func (h *Handler) GetChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rootP, rootM := lastAssistantLLMFromMessages(messages)
+	if rootP == "" && rootM == "" {
+		rootP, rootM = session.LastProvider, session.LastModel
+	}
+	if rootP == "" && rootM == "" {
+		rootP, rootM = session.DefaultProvider, session.DefaultModel
+	}
 	resp := chatDetailResponse{
 		ID:       session.ID.String(),
 		Title:    session.Title,
+		Provider: rootP,
+		Model:    rootM,
 		Messages: toAPIMessages(messages),
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -207,8 +233,13 @@ func (h *Handler) PostMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, assistantResponse{
-		AssistantMessage: chatMessage{Role: string(assistantMsg.Role), Content: assistantMsg.Content},
-		Usage:            usage,
+		AssistantMessage: chatMessage{
+			Role:     string(assistantMsg.Role),
+			Content:  assistantMsg.Content,
+			Provider: assistantMsg.Provider,
+			Model:    assistantMsg.Model,
+		},
+		Usage: usage,
 	})
 }
 
@@ -232,10 +263,6 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
 	streamCtx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
@@ -245,9 +272,13 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
 	meta := map[string]any{
-		"provider": req.Provider,
-		"model":    req.Model,
+		"provider": usage["provider"],
+		"model":    usage["model"],
 		"usage":    usage,
 	}
 	_ = writeSSE(w, map[string]any{"type": "meta", "meta": meta})
@@ -267,7 +298,11 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 				if ferr != nil {
 					_ = writeSSE(w, map[string]any{"type": "error", "message": ferr.Error()})
 				} else {
-					_ = writeSSE(w, map[string]any{"type": "meta", "meta": map[string]any{"assistantMessageId": msg.ID.String()}})
+					_ = writeSSE(w, map[string]any{"type": "meta", "meta": map[string]any{
+						"assistantMessageId": msg.ID.String(),
+						"provider":           msg.Provider,
+						"model":              msg.Model,
+					}})
 					_ = writeSSE(w, map[string]any{"type": "done"})
 				}
 				flusher.Flush()
@@ -275,6 +310,10 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 			}
 			if ev.Type == domain.EventDelta {
 				out.WriteString(ev.Delta)
+			}
+			// Provider iç sinyali; kanal kapanınca zaten assistantMessageId + type "done" gönderilir.
+			if ev.Type == domain.EventDone {
+				continue
 			}
 			_ = writeSSE(w, map[string]any{
 				"type":    string(ev.Type),
@@ -307,9 +346,35 @@ func toDomainMessages(messages []chatMessage) []domain.ChatMessage {
 func toAPIMessages(messages []domain.ChatMessage) []chatMessage {
 	out := make([]chatMessage, 0, len(messages))
 	for _, m := range messages {
-		out = append(out, chatMessage{Role: string(m.Role), Content: m.Content})
+		out = append(out, chatMessage{
+			Role:     string(m.Role),
+			Content:  m.Content,
+			Provider: m.Provider,
+			Model:    m.Model,
+		})
 	}
 	return out
+}
+
+func lastAssistantLLMFromMessages(msgs []domain.ChatMessage) (provider, model string) {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role != domain.RoleAssistant {
+			continue
+		}
+		if msgs[i].Provider != "" || msgs[i].Model != "" {
+			return msgs[i].Provider, msgs[i].Model
+		}
+	}
+	return "", ""
+}
+
+// sessionLLMSummary: son LLM turu (last_*) yoksa oturum default’ları (default_*).
+func sessionLLMSummary(s domain.ChatSession) (provider, model string) {
+	p, m := s.LastProvider, s.LastModel
+	if p == "" && m == "" {
+		p, m = s.DefaultProvider, s.DefaultModel
+	}
+	return p, m
 }
 
 func writeSSE(w http.ResponseWriter, payload any) error {

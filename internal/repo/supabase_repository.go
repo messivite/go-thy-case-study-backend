@@ -32,10 +32,16 @@ func NewSupabaseRepository(supabaseURL, serviceRoleKey string) *SupabaseReposito
 	}
 }
 
-func (r *SupabaseRepository) CreateChatSession(ctx context.Context, userID, title string) (domain.ChatSession, error) {
+func (r *SupabaseRepository) CreateChatSession(ctx context.Context, userID, title, defaultProvider, defaultModel string) (domain.ChatSession, error) {
 	body := map[string]any{
 		"user_id": userID,
 		"title":   title,
+	}
+	if defaultProvider != "" {
+		body["default_provider"] = defaultProvider
+	}
+	if defaultModel != "" {
+		body["default_model"] = defaultModel
 	}
 
 	var rows []chatSessionRow
@@ -84,7 +90,20 @@ func (r *SupabaseRepository) GetChatSessionByID(ctx context.Context, sessionID s
 	return rows[0].toDomain(), nil
 }
 
-func (r *SupabaseRepository) SaveMessage(ctx context.Context, sessionID, userID string, role domain.Role, content string) (domain.ChatMessage, error) {
+func (r *SupabaseRepository) UpdateSessionLastLLM(ctx context.Context, sessionID, provider, model string) error {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+
+	body := map[string]any{
+		"last_provider": provider,
+		"last_model":    model,
+	}
+	path := fmt.Sprintf("/chat_sessions?id=eq.%s", sessionID)
+	return r.doRequest(ctx, http.MethodPatch, path, body, nil)
+}
+
+func (r *SupabaseRepository) SaveMessage(ctx context.Context, sessionID, userID string, role domain.Role, content, provider, model string) (domain.ChatMessage, error) {
 	if _, err := uuid.Parse(sessionID); err != nil {
 		return domain.ChatMessage{}, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
 	}
@@ -96,6 +115,12 @@ func (r *SupabaseRepository) SaveMessage(ctx context.Context, sessionID, userID 
 	}
 	if userID != "" {
 		body["user_id"] = userID
+	}
+	if provider != "" {
+		body["provider"] = provider
+	}
+	if model != "" {
+		body["model"] = model
 	}
 
 	var rows []chatMessageRow
@@ -179,22 +204,39 @@ func (r *SupabaseRepository) doRequest(ctx context.Context, method, path string,
 // ---------------------------------------------------------------------------
 
 type chatSessionRow struct {
-	ID        string `json:"id"`
-	UserID    string `json:"user_id"`
-	Title     string `json:"title"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID               string  `json:"id"`
+	UserID           string  `json:"user_id"`
+	Title            string  `json:"title"`
+	CreatedAt        string  `json:"created_at"`
+	UpdatedAt        string  `json:"updated_at"`
+	LastProvider     *string `json:"last_provider"`
+	LastModel        *string `json:"last_model"`
+	DefaultProvider  *string `json:"default_provider"`
+	DefaultModel     *string `json:"default_model"`
 }
 
 func (r chatSessionRow) toDomain() domain.ChatSession {
 	id, _ := uuid.Parse(r.ID)
 	createdAt, _ := time.Parse(time.RFC3339Nano, r.CreatedAt)
-	return domain.ChatSession{
+	s := domain.ChatSession{
 		ID:        id,
 		UserID:    r.UserID,
 		Title:     r.Title,
 		CreatedAt: createdAt,
 	}
+	if r.LastProvider != nil {
+		s.LastProvider = *r.LastProvider
+	}
+	if r.LastModel != nil {
+		s.LastModel = *r.LastModel
+	}
+	if r.DefaultProvider != nil {
+		s.DefaultProvider = *r.DefaultProvider
+	}
+	if r.DefaultModel != nil {
+		s.DefaultModel = *r.DefaultModel
+	}
+	return s
 }
 
 type chatMessageRow struct {
@@ -204,6 +246,8 @@ type chatMessageRow struct {
 	Role      string  `json:"role"`
 	Content   string  `json:"content"`
 	CreatedAt string  `json:"created_at"`
+	Provider  *string `json:"provider"`
+	Model     *string `json:"model"`
 }
 
 func (r chatMessageRow) toDomain() domain.ChatMessage {
@@ -216,7 +260,7 @@ func (r chatMessageRow) toDomain() domain.ChatMessage {
 		userID = *r.UserID
 	}
 
-	return domain.ChatMessage{
+	m := domain.ChatMessage{
 		ID:        id,
 		SessionID: sessionID,
 		UserID:    userID,
@@ -224,4 +268,11 @@ func (r chatMessageRow) toDomain() domain.ChatMessage {
 		Content:   r.Content,
 		CreatedAt: createdAt,
 	}
+	if r.Provider != nil {
+		m.Provider = *r.Provider
+	}
+	if r.Model != nil {
+		m.Model = *r.Model
+	}
+	return m
 }

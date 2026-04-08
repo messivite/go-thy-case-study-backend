@@ -1,3 +1,16 @@
+# Chat HTTP sözleşmesi: handler'lar internal/chat + internal/app/server.go içinde (gosupabase codegen bu path'leri kullanmıyor).
+# POST /api/chats
+#   body:  { "title"?: string, "provider"?: string, "model"?: string }
+#   201:   { "id": string, "provider": string, "model": string }
+# GET /api/chats
+#   200:   [ { "id", "title", "provider", "model", "createdAt", "updatedAt", "lastMessagePreview" } ]
+# GET /api/chats/{chatID}
+#   200:   { "id", "title", "provider", "model", "messages": [ { "role", "content", "provider"?, "model"? } ] }
+# POST /api/chats/{chatID}/messages
+#   body:  { "provider"?, "model"?, "content"?, "messages"? }
+#   201:   { "assistantMessage": { "role", "content", "provider", "model" }, "usage"?: object }
+# POST /api/chats/{chatID}/stream
+#   body:  aynı; cevap text/event-stream, data: JSON (meta | delta | done)
 version: "1"
 basePath: /api
 output:

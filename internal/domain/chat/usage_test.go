@@ -33,7 +33,7 @@ func TestNormalizeUsage(t *testing.T) {
 func TestNormalizeUsageFloat64(t *testing.T) {
 	raw := map[string]any{
 		"provider":          "gemini",
-		"model":             "gemini-2.0-flash",
+		"model":             "gemini-2.5-flash",
 		"prompt_tokens":     float64(100),
 		"completion_tokens": float64(50),
 		"total_tokens":      float64(150),

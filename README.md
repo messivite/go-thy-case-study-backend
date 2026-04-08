@@ -46,6 +46,8 @@ THY case study için yazdığım Go backend. Auth Supabase, roller JWT claim üz
 
 **Go modülü:** `github.com/messivite/go-thy-case-study-backend` — `go.mod` ile bütün `import` satırları bununla uyumlu; `github.com/example/...` kullanılmıyor (CI’da yanlış modül aranıp patlamasın diye).
 
+**Sürüm notları:** [CHANGELOG.md](CHANGELOG.md) · [RELEASE_NOTES.md](RELEASE_NOTES.md) (tag / GitHub Release akışı)
+
 ## Built With gosupabase
 
 `gosupabase` paketini ben yazdım; bu repo onun üstünde. YAML’dan endpoint, JWT doğrulama, role guard işi oradan geliyor.
@@ -97,7 +99,7 @@ internal/
   app/
     server.go              → Router + middleware bağlama
 providers.yaml             → LLM provider konfigürasyonu (non-secret)
-api.yaml                   → Endpoint, auth ve rol kuralları
+api.yaml                   → Endpoint listesi + üstte chat sözleşme notları (body/response şekilleri)
 supabase/                  → Supabase CLI config, functions, migrations
 ```
 
@@ -119,7 +121,7 @@ providers:
     model: gpt-4o
     env_key: OPENAI_API_KEY
   - name: gemini
-    model: gemini-2.0-flash
+    model: gemini-2.5-flash
     env_key: GEMINI_API_KEY
 ```
 
@@ -246,6 +248,61 @@ go run ./cmd/thy-case-llm doctor
 - `OPENAI_API_KEY`
 - `GEMINI_API_KEY`
 - `PROVIDERS_CONFIG` (varsayılan `providers.yaml`, opsiyonel)
+- `OBSERVABILITY_LOG_FILE` (opsiyonel) — yapılandırılmış logları **JSON Lines** olarak bu dosyaya da yazar; stdout davranışı aynı kalır. Örn. `./logs/app.jsonl` veya `/var/log/thy-api.jsonl`. Boş bırakılınca sadece process stdout (chi logger ayrı). Loki, Vector, CloudWatch agent, `tail -f` ile izlenebilir.
+- `OTEL_EXPORTER_OTLP_ENDPOINT` (opsiyonel) — OpenTelemetry trace export (OTLP HTTP); ayrıntı aşağıda.
+
+### Observability (dosyaya log)
+
+`internal/observability` içindeki `Info` / `Warn` / `Error` ve `LLM*` helper’ları tek satırlık JSON üretir (`ts`, `level`, `event`, `fields`, …). `OBSERVABILITY_LOG_FILE` set edilirse **aynı satırlar dosyaya append** edilir; process sonunda dosya `CloseFileLog` ile kapatılır (`cmd/api` ve `cmd/server`).
+
+Örnek satır:
+
+```json
+{"ts":"2026-04-09T12:00:00.123456789Z","level":"info","event":"llm.request","fields":{"provider":"openai","model":"gpt-4.1-mini","user_id":"…","session_id":"…"}}
+```
+
+Üretimde dosya boyutu için logrotate / sidecar veya merkezi toplayıcı kullan; uygulama içinde rotation yok (bilinçli sade tutuş).
+
+### OpenTelemetry (trace)
+
+**Zorluk:** Orta — bu repoda **minimal** kurulum var: gelen HTTP istekleri için **server span** (chi router + `otelhttp`), export **OTLP/HTTP**. Env yoksa **hiçbir şey çalışmaz** (sıfır ek yük).
+
+| Env | Anlam |
+|-----|--------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` veya `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Örn. `http://localhost:4318` (Collector HTTP). Tanımlı değilse tracing kapalı. |
+| `OTEL_SERVICE_NAME` | Varsayılan `thy-case-study-api`. |
+
+Örnek Collector config bu repoda: **`otel/collector.yaml`**. Binary nerede olursa olsun **config’e tam yol** ver:
+
+```bash
+./otelcol --config=/ABSOLUTE/PATH/thy-case-study-backend/otel/collector.yaml
+```
+
+(`config.yaml: no such file` hatası, komutu çalıştırdığın dizinde dosya arandığı içindir; `--config=` ile proje içindeki yolu göster.)
+
+#### OpenTelemetry Collector kurulumu (yerel test)
+
+1. **İndir** — Resmi sürümler [OpenTelemetry Collector releases](https://github.com/open-telemetry/opentelemetry-collector-releases/releases) sayfasında. Bu repodaki örnek config **Core** dağıtımı (`otelcol`) ile uyumludur; macOS için `otelcol_*_darwin_arm64.tar.gz` veya `*_amd64` uygun olanı seç. Daha fazla exporter/receiver gerekiyorsa aynı sayfadan **[otelcol-contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)** varlığını da kullanabilirsin. Kurulum özeti: [Collector installation](https://opentelemetry.io/docs/collector/installation/).
+2. **Arşivi aç**, `otelcol` binary’sini istediğin klasöre koy. İlk çalıştırmada macOS “bilinmeyen geliştirici” diyebilir: Finder’da sağ tık → **Aç** veya `xattr -dr com.apple.quarantine ./otelcol`.
+3. **Collector’ı ayrı terminalde çalıştır** (pencere açık kalsın):
+
+   ```bash
+   ./otelcol --config=/ABSOLUTE/PATH/thy-case-study-backend/otel/collector.yaml
+   ```
+
+   Log’da `Starting HTTP server` … `endpoint: "[::]:4318"` görünmeli.
+4. **API tarafı** — Process ortamında `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` (ve isteğe bağlı `OTEL_SERVICE_NAME`) tanımlı olsun; `go run` `.env` okumaz, export veya IDE env / `gosupabase dev` ile yükle.
+5. **Test** — `GET /health` trace üretmez; `GET /api/providers` veya `GET /api/chats` gibi korumalı bir endpoint’e JWT ile istek at. Trace çıktısı **Collector’ın çalıştığı terminalde** (`debug` exporter) görünür.
+
+**Örnek ekran görüntüsü** — Collector’da gelen span (bu projeden `GET /api/chats`, `debug` exporter çıktısı):
+
+![OpenTelemetry Collector debug exporter ile gelen trace örneği](https://i.ibb.co/VWrfvghD/Screenshot-2026-04-09-at-02-22-32.png)
+
+*(Aynı görüntü doğrudan link: [Screenshot-2026-04-09-at-02-22-32.png](https://i.ibb.co/VWrfvghD/Screenshot-2026-04-09-at-02-22-32.png))*
+
+Üretimde Collector’a Jaeger, Grafana Tempo, vendor OTLP uçları gibi **exporter** eklenir; yerelde sadece `debug` ile konsolda doğrulamak yeterli.
+
+**Sonraki seviye (yapılmadı):** LLM çağrıları için `usecase` içinde `otel.Tracer` ile child span, metrics, log→trace bağlama — ihtiyaç oldukça eklenebilir.
 
 ## Endpointler
 
@@ -254,9 +311,9 @@ go run ./cmd/thy-case-llm doctor
 | `GET` | `/api/health` | Hayır | Sağlık kontrolü |
 | `GET` | `/api/me` | Evet | JWT'deki kullanıcı bilgisi |
 | `GET` | `/api/providers` | Evet | Aktif LLM provider'ları (default bilgisi dahil) |
-| `POST` | `/api/chats` | Evet | Yeni sohbet oturumu oluştur |
-| `GET` | `/api/chats` | Evet | Sohbet listesi |
-| `GET` | `/api/chats/{chatID}` | Evet | Sohbet detayı + mesaj geçmişi |
+| `POST` | `/api/chats` | Evet | Yeni sohbet; gövdede isteğe bağlı `provider`, `model` (`providers.yaml` / `GET /api/providers`). Cevap: `id`, `provider`, `model` (session default’ları) |
+| `GET` | `/api/chats` | Evet | Sohbet listesi; her öğede `provider` / `model` (son LLM turu veya session default) |
+| `GET` | `/api/chats/{chatID}` | Evet | Sohbet + mesajlar; her asistan satırında `provider`/`model` (yeni mesajlardan); kökte özet = son dolu asistan veya session |
 | `POST` | `/api/chats/{chatID}/messages` | Evet | Mesaj gönder (non-stream) |
 | `POST` | `/api/chats/{chatID}/stream` | Evet | Mesaj gönder (SSE stream) |
 
@@ -379,16 +436,41 @@ go run ./cmd/api
 TOKEN="<ACCESS_TOKEN>"
 ```
 
-Chat oluştur:
+**Sohbet oluştur — `POST /api/chats`**
+
+İstek gövdesi (JSON):
+
+| Alan | Zorunlu | Açıklama |
+|------|---------|----------|
+| `title` | Hayır | Sohbet başlığı (boş string olabilir) |
+| `provider` | Hayır | Örn. `openai`, `gemini`. Yoksa `providers.yaml` içindeki `default` provider kullanılır ve `chat_sessions.default_provider` olarak kaydedilir. |
+| `model` | Hayır | API model id (örn. `gemini-2.5-flash`). Yoksa seçilen provider’ın varsayılan model’i kullanılır. |
+
+Bu `provider` / `model` değerleri oturum açılırken veritabanına yazılır; henüz mesaj yokken `GET /api/chats/{chatID}` cevabındaki kök `provider` / `model` alanları da buradan gelir (sonra mesajlar geldikçe öncelik mesajlardaki / son tur metadatasına göre güncellenir).
+
+**201 cevap gövdesi:** `id` (UUID string), `provider`, `model` — kaydedilen session default’ları.
+
+Sadece başlık:
 
 ```bash
 curl -X POST "http://localhost:8081/api/chats" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"title":"ilk chat"}'
+  -d '{"title":"ilk test chat session"}'
 ```
 
-Chat listele:
+Başlık + açık provider/model (Postman’da **Body → raw → JSON**; **Authorization’da yalnızca Bearer token** kullan — hem header hem ayrıca “Bearer Token” auth’u işaretlemek token’ı iki kez gönderebilir):
+
+```bash
+curl -X POST "http://localhost:8081/api/chats" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"ilk test chat session","provider":"gemini","model":"gemini-2.5-flash"}'
+```
+
+Hangi isimlerin geçerli olduğunu görmek için: `GET /api/providers` veya repodaki `providers.yaml`.
+
+Chat listele (her satırda `provider` / `model`: son başarılı LLM turu veya oturum açılışında kayıtlı default):
 
 ```bash
 curl "http://localhost:8081/api/chats" \
@@ -401,6 +483,8 @@ Chat detay:
 curl "http://localhost:8081/api/chats/<CHAT_ID>" \
   -H "Authorization: Bearer $TOKEN"
 ```
+
+Kök `provider`/`model` son anlamlı asistan cevabının özetidir. Her mesajda asistan satırları için `provider`/`model` vardır (eski kayıtlar migration öncesi boş/omit). `chat_messages.provider`, `chat_messages.model` ve isteğe bağlı session özeti için migration’ları uygula (`supabase db push`).
 
 Mesaj gönder (non-stream):
 
@@ -425,7 +509,7 @@ curl -N -X POST "http://localhost:8081/api/chats/<CHAT_ID>/stream" \
   -H "Content-Type: application/json" \
   -d '{
     "provider":"gemini",
-    "model":"gemini-1.5-flash",
+    "model":"gemini-2.5-flash",
     "messages":[
       {"role":"user","content":"Bana kisa bir selamlama yaz"}
     ]
