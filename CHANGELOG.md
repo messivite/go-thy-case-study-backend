@@ -7,6 +7,19 @@
 ### Added
 
 - `CHANGELOG.md` ve `RELEASE_NOTES.md`.
+- **`thy-case-llm deploy`:** `list`, `show <id>`, `init <id>` alt komutları; şablonlar `internal/deploy` içinde `go:embed` ile gömülü.
+  - Hedefler: **`railway`** (`Dockerfile`, `railway.toml`), **`fly`** (aynı Dockerfile + `fly.toml`), **`vercel`** (örnek `vercel.json` + `deploy/VERCEL.md`; API’nin harici host’ta çalışması senaryosu).
+  - `init` flag’leri: `--dry-run`, `--force`, `--out`, `--module`, `--port`, `--main-package`, `--health-path`, `--api-base-url` (vercel).
+- `internal/deploy` birim testleri (şema yükleme, dry-run, dosya çakışması, `go.mod` modül tespiti).
+
+### Changed
+
+- `thy-case-llm` sürüm sabiti **v0.3.0**; `help` çıktısında komut sırası: `doctor` sonrasında `deploy` satırları.
+
+### Documentation
+
+- README: klon sonrası **`go install ./cmd/...`** ile `api`, `server`, `thy-case-llm` kurulumu; PATH notu.
+- README: **`## Deploy`** bölümü (dosya sonu) — hedef tablosu, örnek komutlar, flag özeti; `thy-case-llm CLI` içinde deploy detayına iç link.
 
 ### Fixed
 

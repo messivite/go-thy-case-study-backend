@@ -63,7 +63,7 @@ THY case study için yazdığım Go backend. Auth Supabase, roller JWT claim üz
 - **Profil:** `public.profiles`, `auth.users` ile 1:1
 - **Chat:** Varsayılan Supabase Postgres (REST + service role); istersen `CHAT_PERSISTENCE=memory` ile sadece RAM
 - **DB:** Supabase Postgres (auth + `profiles` + `user_roles` + chat tabloları, RLS)
-- **LLM:** `providers.yaml` + `.env`, yönetim için `thy-case-llm`
+- **LLM:** `providers.yaml` + `.env`, yönetim için `thy-case-llm` (`deploy` ile Railway/Fly/Vercel şablonları)
 
 ## Proje Yapısı
 
@@ -73,6 +73,7 @@ cmd/
   server/main.go           → gosupabase dev uyumlu giriş noktası
   thy-case-llm/main.go     → LLM provider yönetim CLI'ı
 internal/
+  deploy/                  → deploy list/show/init (Railway, Fly, Vercel şablonları, go:embed)
   domain/chat/             → Domain modelleri, interface'ler, error'lar
     models.go              → Role, ChatMessage, ChatSession, StreamEvent, ProviderRequest/Response
     provider.go            → LLMProvider interface (Complete + Stream)
@@ -142,6 +143,26 @@ cd /Users/kullaniciAdiniz/Projects/thy-case-study-backend
 go install ./cmd/thy-case-llm
 ```
 
+**Repoyu klonlayıp tüm çalıştırılabilirleri `go install` ile kurmak:** modül kökünde (Go 1.16+; bu repo 1.25) şu yeterli; `go mod download` ayrıca gerekmez, derleme sırasında bağımlılıklar iner:
+
+```bash
+git clone https://github.com/messivite/go-thy-case-study-backend.git
+cd go-thy-case-study-backend
+go install ./cmd/...
+```
+
+`$(go env GOPATH)/bin` içine şunlar yazılır: **`api`**, **`server`**, **`thy-case-llm`**. Bu dizin `PATH`’te değilse:
+
+```bash
+export PATH="$(go env GOPATH)/bin:$PATH"
+thy-case-llm version
+# api ve server doğrudan sunucu başlatır; çalıştırmak için repo kökünde .env ile:
+#   api
+#   server
+```
+
+Çalışma zamanı için ayrıca `.env` / `providers.yaml` / Supabase ayarları gerekir; bunlar `go install` ile gelmez.
+
 ### Önemli not (güncel binary)
 
 `templates list`, `templates show`, `provider add --template …` Faz 2’den beri var. Eski `go install` binary’si kalırsa şunu görürsün:
@@ -176,6 +197,11 @@ Install istemezsen: `go run ./cmd/thy-case-llm templates list`.
 | `templates list` | Yerleşik provider şablonlarını listele (openai, gemini, anthropic, …) |
 | `templates show <name>` | Bir şablonun detayını göster (model, env key, base URL) |
 | `doctor` | Provider + env + config için hızlı sağlık kontrolü |
+| `deploy list` | Üretilebilir deploy hedeflerini listele (`railway`, `fly`, `vercel`) |
+| `deploy show <id>` | Hedef açıklaması ve yazılacak dosya yolları |
+| `deploy init <id>` | Şablonları repoya yazar (`Dockerfile`, `fly.toml`, örnek `vercel.json`, …) |
+
+Deploy komutunun tam açıklaması ve örnekler [en alttaki Deploy bölümünde](#deploy).
 
 ### Kullanım Örnekleri
 
@@ -539,3 +565,49 @@ OpenAI’nin döndürdüğü `usage` token’larını kullanıp ürün içi limi
 - Register’da default’u kullanıcı kotasına yazan trigger veya hook.
 - İstekte (veya LLM cevabı geldikten sonra) sayaç güncelle; limit dolunca anlamlı `429` + `code`.
 - Admin panelden user bulup kotayı düzenleme; satır yoksa default’tan üretme kuralı — detayını sonra netleştiririz.
+
+## Deploy
+
+**thy-case-llm** ile üretim dosyalarını repoya yazdırmak: `thy-case-llm deploy` (CLI **v0.3.0+**; `thy-case-llm version`, eskiyse `go install ./cmd/thy-case-llm`).
+
+API süreci **`cmd/api`**; dinlediği port varsayılan **`8081`** (`PORT` env). Docker build **her zaman repo kökünden** yapılmalı (`docker build -f Dockerfile .`).
+
+### Hedefler (`deploy list`)
+
+| `id` | Üretilen dosyalar | Not |
+|------|-------------------|-----|
+| `railway` | `Dockerfile`, `railway.toml` | Railway’de health check path şablonda `/health` |
+| `fly` | `Dockerfile`, `fly.toml` | Dockerfile `railway` ile aynı şablondan |
+| `vercel` | `vercel.json`, `deploy/VERCEL.md` | Go API’yi Vercel’de “sunucu” gibi kullanma iddiası yok; örnek **rewrite** ile istekleri Railway/Fly’daki API’ye yönlendirme |
+
+### Örnek komutlar
+
+```bash
+# Hedefleri listele
+thy-case-llm deploy list
+
+# Bir hedefin açıklaması + hangi dosyaların yazılacağı
+thy-case-llm deploy show railway
+thy-case-llm deploy show vercel
+
+# Önizleme (disk'e yazmaz, stdout'a basar)
+thy-case-llm deploy init railway --dry-run
+
+# Repo köküne yaz (mevcut dosya varsa hata verir)
+thy-case-llm deploy init railway
+thy-case-llm deploy init fly
+
+# Üzerine yaz
+thy-case-llm deploy init fly --force
+
+# Başka dizine yaz (ör. monorepo alt paketi)
+thy-case-llm deploy init railway --out ./backend
+
+# Vercel rewrite hedefi (sonunda / olmasın)
+thy-case-llm deploy init vercel --api-base-url https://api.ornek.com
+
+# go.mod yoksa veya modül adını elle vermek için
+thy-case-llm deploy init railway --module github.com/senin/projen
+```
+
+Yaygın flag’ler: `--dry-run`, `--force`, `--out <dir>`, `--port`, `--main-package`, `--health-path`, `--api-base-url` (vercel), `--module`. Tam liste: `thy-case-llm deploy` (alt komut yoksa yardım metni).

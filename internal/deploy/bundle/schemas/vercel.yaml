@@ -1,0 +1,16 @@
+id: vercel
+displayName: Vercel (ön yüz / yönlendirme)
+description: Bu repo uzun ömürlü Go API'dir; şablon örnek vercel.json + rehber üretir. API'yi Railway veya Fly.io'da çalıştır.
+defaults:
+  port: "8081"
+  main_package: "./cmd/api"
+  health_path: "/health"
+  module: github.com/messivite/go-thy-case-study-backend
+files:
+  - template: vercel/vercel.json.tmpl
+    output: vercel.json
+  - template: vercel/VERCEL.md.tmpl
+    output: deploy/VERCEL.md
+notes: |
+  vercel.json içindeki api_base_url yer tutucusunu gerçek API taban URL'in ile değiştir.
+  Vercel'de statik site veya Next.js; /api/* isteklerini harici backend'e yönlendirebilirsin.

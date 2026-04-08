@@ -1,0 +1,15 @@
+id: fly
+displayName: Fly.io
+description: fly.toml + Dockerfile (Railway şablonu ile aynı Dockerfile kullanılır).
+defaults:
+  port: "8081"
+  main_package: "./cmd/api"
+  health_path: "/health"
+  module: github.com/messivite/go-thy-case-study-backend
+files:
+  - template: railway/Dockerfile.tmpl
+    output: Dockerfile
+  - template: fly/fly.toml.tmpl
+    output: fly.toml
+notes: |
+  fly launch veya fly deploy ile kullan; fly.toml içindeki app adını kendi uygulamanla değiştir.

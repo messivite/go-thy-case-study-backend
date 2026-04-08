@@ -1,0 +1,17 @@
+id: railway
+displayName: Railway
+description: Dockerfile + railway.toml; docker build bağlamı repo kökü olmalı.
+defaults:
+  port: "8081"
+  main_package: "./cmd/api"
+  health_path: "/health"
+  module: github.com/messivite/go-thy-case-study-backend
+files:
+  - template: railway/Dockerfile.tmpl
+    output: Dockerfile
+  - template: railway/railway.toml.tmpl
+    output: railway.toml
+notes: |
+  1. Repo kökünde: docker build -f Dockerfile .
+  2. railway login && railway link && railway up
+  3. Supabase URL, service role, JWT ve LLM anahtarlarını Railway Variables'a ekle.
