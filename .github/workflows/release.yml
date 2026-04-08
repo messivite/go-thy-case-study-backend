@@ -5,16 +5,6 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to release (e.g., v1.2.3). Leave empty to use current ref."
-        required: false
-        type: string
-      make_latest:
-        description: "Mark release as latest"
-        required: false
-        default: true
-        type: boolean
 
 permissions:
   contents: write
@@ -61,10 +51,20 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Run GoReleaser
+      - name: Run GoReleaser (tag release)
+        if: startsWith(github.ref, 'refs/tags/')
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean --debug
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run GoReleaser (snapshot for manual runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean --skip=publish --debug
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
