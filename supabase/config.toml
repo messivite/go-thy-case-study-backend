@@ -1,0 +1,4 @@
+# Gateway JWT doğrulaması ES256 / yeni signing keys ile çakışabiliyor.
+# Güvenlik: register-push-token içinde anon client + auth.getUser(token) ile doğrulama devam eder.
+[functions.register-push-token]
+verify_jwt = false

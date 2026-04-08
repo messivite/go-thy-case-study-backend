@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id UUID PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);

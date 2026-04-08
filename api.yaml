@@ -1,0 +1,34 @@
+version: "1"
+basePath: /api
+output:
+  serverDir: server
+  handlersDir: handlers
+endpoints:
+  - method: GET
+    path: /health
+    handler: Health
+    auth: false
+  - method: GET
+    path: /me
+    handler: Me
+    auth: true
+  - method: GET
+    path: /providers
+    handler: ListProviders
+    auth: true
+  - method: GET
+    path: /sessions
+    handler: ListSessions
+    auth: true
+  - method: POST
+    path: /sessions
+    handler: CreateSession
+    auth: true
+  - method: GET
+    path: /sessions/{sessionID}/messages
+    handler: ListMessages
+    auth: true
+  - method: POST
+    path: /sessions/{sessionID}/messages
+    handler: PostMessage
+    auth: true

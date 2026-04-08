@@ -1,0 +1,36 @@
+version: 2
+
+project_name: thy-case-study-backend
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: default
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    main: ./cmd/api
+    binary: thy-case-study-backend
+    ldflags:
+      - -s -w
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+
+changelog:
+  sort: asc
+  use: github

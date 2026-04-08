@@ -1,0 +1,5 @@
+output:
+  serverDir: server
+  handlersDir: handlers
+deploy:
+  provider: none
