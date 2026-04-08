@@ -11,6 +11,10 @@ on:
         required: true
         default: false
         type: boolean
+      tag:
+        description: "Publish edilecek mevcut tag (or: v0.0.3)"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -57,6 +61,18 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Validate manual publish input
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && inputs.tag == '' }}
+        run: |
+          echo "Manual publish icin 'tag' alani zorunludur (ornek: v0.0.3)." >&2
+          exit 1
+
+      - name: Checkout selected tag for manual publish
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && inputs.tag != '' }}
+        run: |
+          git fetch --tags --force
+          git checkout "tags/${{ inputs.tag }}"
+
       - name: Run GoReleaser (tag release)
         if: startsWith(github.ref, 'refs/tags/')
         uses: goreleaser/goreleaser-action@v6
@@ -67,7 +83,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run GoReleaser (manual publish)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && inputs.tag != '' }}
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
