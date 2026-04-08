@@ -7,3 +7,5 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/messivite/gosupabase v1.0.5
 )
+
+require gopkg.in/yaml.v3 v3.0.1

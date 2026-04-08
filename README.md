@@ -60,17 +60,172 @@ Paket; YAML-first endpoint yönetimi, Supabase JWT doğrulaması ve role-based r
 - **Profil modeli:** `public.profiles` (`auth.users.id` ile 1:1)
 - **Sohbet kalıcılığı:** Şu an bellek içi (in-memory) repository kullanılıyor (DB DSN gerektirmez)
 - **Veritabanı:** Supabase Postgres (Auth tabloları + `public.profiles` + `public.user_roles` + RLS/policy)
+- **LLM Provider Yönetimi:** `providers.yaml` + `.env` ile ayrıştırılmış konfig, `thy-case-llm` CLI ile yönetim
+
+## DDD Katman Mimarisi (Faz 1)
+
+```
+┌─────────────────────────────────────────────────┐
+│                  HTTP Katmanı                    │
+│          internal/chat/handler.go                │
+│      (DTO dönüşümleri, SSE akışı)               │
+├─────────────────────────────────────────────────┤
+│              Application Katmanı                 │
+│       internal/application/chat/usecase.go       │
+│  (iş kuralları, orkestrasyon, finalize akışı)    │
+├─────────────────────────────────────────────────┤
+│               Domain Katmanı                     │
+│          internal/domain/chat/                   │
+│  models · provider interface · repository i/f    │
+│      errors · Role · StreamEvent · Request       │
+├─────────────────────────────────────────────────┤
+│           Infrastructure Katmanı                 │
+│  internal/provider/  (OpenAI, Gemini adapter)    │
+│  internal/repo/      (MemoryRepository)          │
+│  internal/config/    (providers.yaml loader)     │
+│  internal/auth/      (Supabase JWT adapter)      │
+└─────────────────────────────────────────────────┘
+```
+
+**Yeni bir LLM provider eklemek için:**
+1. `internal/provider/` altında yeni adapter dosyası oluştur (`domain.LLMProvider` interface'ini implemente et)
+2. `providers.yaml`'a provider bilgisini ekle (veya `thy-case-llm provider add` kullan)
+3. `cmd/api/main.go` içindeki `createProvider` switch'ine yeni case ekle
 
 ## Proje Yapısı
 
-- `cmd/api/main.go` - API başlangıç noktası
-- `cmd/server/main.go` - `gosupabase dev` ile uyumlu başlangıç noktası
-- `internal/app` - HTTP sunucu ve route bağlama katmanı
-- `internal/auth` - Supabase JWT doğrulama adaptörü
-- `internal/chat` - Chat handler/service katmanı
-- `internal/repo` - Bellek içi repository implementasyonu
-- `supabase/` - Supabase CLI config, functions ve migrations
-- `api.yaml` - Endpoint, auth ve rol kuralları
+```
+cmd/
+  api/main.go              → API sunucu giriş noktası
+  server/main.go           → gosupabase dev uyumlu giriş noktası
+  thy-case-llm/main.go     → LLM provider yönetim CLI'ı
+internal/
+  domain/chat/             → Domain modelleri, interface'ler, error'lar
+    models.go              → Role, ChatMessage, ChatSession, StreamEvent, ProviderRequest/Response
+    provider.go            → LLMProvider interface (Complete + Stream)
+    repository.go          → Repository interface
+    errors.go              → Domain hata tanımları
+  application/chat/        → Use-case katmanı (iş kuralları)
+    usecase.go             → CreateSession, SendMessage, StreamMessage, ...
+  provider/                → LLM provider adapter'ları
+    registry.go            → Provider registry (metadata, default, list)
+    openai.go              → OpenAI adapter
+    gemini.go              → Gemini adapter
+    helpers.go             → Ortak yardımcı fonksiyonlar
+  config/                  → Konfig yükleme
+    provider.go            → providers.yaml CRUD işlemleri
+  chat/                    → HTTP handler katmanı
+    handler.go             → REST + SSE endpoint'leri
+  repo/                    → Repository implementasyonları
+    memory_repository.go   → Bellek içi (in-memory) depo
+  auth/                    → JWT doğrulama
+    auth.go                → Middleware, context helpers
+    supabase_adapter.go    → Supabase JWT/JWKS adapter
+  app/
+    server.go              → Router + middleware bağlama
+providers.yaml             → LLM provider konfigürasyonu (non-secret)
+api.yaml                   → Endpoint, auth ve rol kuralları
+supabase/                  → Supabase CLI config, functions, migrations
+```
+
+## Provider Konfigürasyonu
+
+LLM provider yönetimi iki katmanlı ayrışma prensibiyle çalışır:
+
+| Dosya | İçerik | Git'e eklenir? |
+|-------|--------|----------------|
+| `providers.yaml` | Provider adı, model, env key referansı | Evet |
+| `.env` | API anahtarları (`OPENAI_API_KEY`, `GEMINI_API_KEY`, ...) | Hayır |
+
+**providers.yaml örneği:**
+
+```yaml
+default: openai
+providers:
+  - name: openai
+    model: gpt-4o
+    env_key: OPENAI_API_KEY
+  - name: gemini
+    model: gemini-2.0-flash
+    env_key: GEMINI_API_KEY
+```
+
+Sunucu başlarken `providers.yaml` okunur, her provider için ilgili env key kontrol edilir. Anahtarı eksik olan provider devre dışı bırakılır (uyarı loglanır).
+
+## thy-case-llm CLI
+
+LLM provider yönetimi için komut satırı aracı.
+
+```bash
+go run ./cmd/thy-case-llm help
+```
+
+Global komut olarak kullanmak için:
+
+```bash
+cd /Users/mustafaaksoy/Projects/thy-case-study-backend
+go install ./cmd/thy-case-llm
+```
+
+### Komutlar
+
+| Komut | Açıklama |
+|-------|----------|
+| `provider add` | Yeni provider ekle (interaktif veya `--name`, `--model`, `--env-key` flag'leri ile) |
+| `provider list` | Kayıtlı provider'ları listele (varsayılan, model, env durumu) |
+| `provider remove <name>` | Provider'ı kaldır |
+| `provider set-default <name>` | Varsayılan provider'ı değiştir |
+| `provider validate` | Tüm provider'ların env key kontrolünü yap |
+| `doctor` | Provider + env + config için hızlı sağlık kontrolü |
+
+### Kullanım Örnekleri
+
+```bash
+# Provider listele
+thy-case-llm provider list
+
+# Yeni provider ekle (interaktif)
+thy-case-llm provider add
+
+# Yeni provider ekle (flag ile)
+thy-case-llm provider add --name openai --model gpt-4o --env-key OPENAI_API_KEY
+
+# Varsayılan provider'ı gemini yap
+thy-case-llm provider set-default gemini
+
+# Konfigürasyon doğrula
+thy-case-llm provider validate
+
+# Hızlı sağlık kontrolü
+thy-case-llm doctor
+
+# Provider kaldır
+thy-case-llm provider remove gemini
+```
+
+### Olası Hata ve Çözüm
+
+`zsh: command not found: thy-case-llm` hatası alırsanız:
+
+1) Binary'yi kurun:
+
+```bash
+cd /Users/mustafaaksoy/Projects/thy-case-study-backend
+go install ./cmd/thy-case-llm
+```
+
+2) Go bin path'i `PATH` içinde değilse ekleyin:
+
+```bash
+echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+3) Alternatif olarak kurulum gerektirmeden çalıştırın:
+
+```bash
+go run ./cmd/thy-case-llm doctor
+```
 
 ## Environment
 
@@ -85,18 +240,20 @@ Paket; YAML-first endpoint yönetimi, Supabase JWT doğrulaması ve role-based r
 - `SUPABASE_ROLE_CLAIM_KEY`
 - `OPENAI_API_KEY`
 - `GEMINI_API_KEY`
+- `PROVIDERS_CONFIG` (varsayılan `providers.yaml`, opsiyonel)
 
 ## Endpointler
 
-`api.yaml` altında:
-
-- `GET /api/health` (auth yok)
-- `GET /api/me` (auth var)
-- `GET /api/providers` (auth var)
-- `GET /api/sessions` (auth var)
-- `POST /api/sessions` (auth var)
-- `GET /api/sessions/{sessionID}/messages` (auth var)
-- `POST /api/sessions/{sessionID}/messages` (auth var)
+| Metot | Endpoint | Auth | Açıklama |
+|-------|----------|------|----------|
+| `GET` | `/api/health` | Hayır | Sağlık kontrolü |
+| `GET` | `/api/me` | Evet | JWT'deki kullanıcı bilgisi |
+| `GET` | `/api/providers` | Evet | Aktif LLM provider'ları (default bilgisi dahil) |
+| `POST` | `/api/chats` | Evet | Yeni sohbet oturumu oluştur |
+| `GET` | `/api/chats` | Evet | Sohbet listesi |
+| `GET` | `/api/chats/{chatID}` | Evet | Sohbet detayı + mesaj geçmişi |
+| `POST` | `/api/chats/{chatID}/messages` | Evet | Mesaj gönder (non-stream) |
+| `POST` | `/api/chats/{chatID}/stream` | Evet | Mesaj gönder (SSE stream) |
 
 ## Auth + Rol Akışı
 
@@ -217,10 +374,70 @@ veya:
 go run ./cmd/api
 ```
 
+## Faz 0 Test (curl)
+
+`TOKEN` yerine Supabase access token verin.
+
+```bash
+TOKEN="<ACCESS_TOKEN>"
+```
+
+Chat oluştur:
+
+```bash
+curl -X POST "http://localhost:8081/api/chats" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"ilk chat"}'
+```
+
+Chat listele:
+
+```bash
+curl "http://localhost:8081/api/chats" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Chat detay:
+
+```bash
+curl "http://localhost:8081/api/chats/<CHAT_ID>" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Mesaj gönder (non-stream):
+
+```bash
+curl -X POST "http://localhost:8081/api/chats/<CHAT_ID>/messages" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider":"openai",
+    "model":"gpt-4.1-mini",
+    "messages":[
+      {"role":"user","content":"Merhaba, nasilsin?"}
+    ]
+  }'
+```
+
+Mesaj gönder (SSE stream):
+
+```bash
+curl -N -X POST "http://localhost:8081/api/chats/<CHAT_ID>/stream" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider":"gemini",
+    "model":"gemini-1.5-flash",
+    "messages":[
+      {"role":"user","content":"Bana kisa bir selamlama yaz"}
+    ]
+  }'
+```
+
 ## Notlar
 
 - `supabase/migrations` altında bazı migration dosyaları geçiş/legacy amacıyla tutuluyor.
 - Kaynak rol modeli olarak `public.user_roles` kullanılmalıdır.
 - `public.users` yeni geliştirmede kullanılmaz; profil için `public.profiles` kullanılır.
-
--
+- **Faz 1:** DDD katman ayrımı yapıldı (domain → application → infrastructure). Provider yönetimi `providers.yaml` + `thy-case-llm` CLI ile standartlaştırıldı. Yeni provider eklemek sadece adapter dosyası + registry kaydı gerektirir.

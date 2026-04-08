@@ -7,7 +7,7 @@ before:
     - go mod tidy
 
 builds:
-  - id: default
+  - id: api
     env:
       - CGO_ENABLED=0
     goos:
@@ -18,6 +18,19 @@ builds:
       - arm64
     main: ./cmd/api
     binary: thy-case-study-backend
+    ldflags:
+      - -s -w
+  - id: cli
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    main: ./cmd/thy-case-llm
+    binary: thy-case-llm
     ldflags:
       - -s -w
 

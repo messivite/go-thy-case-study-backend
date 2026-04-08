@@ -8,24 +8,28 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	domain "github.com/example/thy-case-study-backend/internal/domain/chat"
 )
+
+var _ domain.Repository = (*MemoryRepository)(nil)
 
 type MemoryRepository struct {
 	mu       sync.RWMutex
-	sessions map[uuid.UUID]ChatSession
-	messages map[uuid.UUID][]ChatMessage
+	sessions map[uuid.UUID]domain.ChatSession
+	messages map[uuid.UUID][]domain.ChatMessage
 }
 
 func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{
-		sessions: make(map[uuid.UUID]ChatSession),
-		messages: make(map[uuid.UUID][]ChatMessage),
+		sessions: make(map[uuid.UUID]domain.ChatSession),
+		messages: make(map[uuid.UUID][]domain.ChatMessage),
 	}
 }
 
-func (r *MemoryRepository) CreateChatSession(ctx context.Context, userID string, title string) (ChatSession, error) {
+func (r *MemoryRepository) CreateChatSession(ctx context.Context, userID, title string) (domain.ChatSession, error) {
 	id := uuid.New()
-	session := ChatSession{
+	session := domain.ChatSession{
 		ID:        id,
 		UserID:    userID,
 		Title:     title,
@@ -39,18 +43,18 @@ func (r *MemoryRepository) CreateChatSession(ctx context.Context, userID string,
 	return session, nil
 }
 
-func (r *MemoryRepository) GetChatSessionsByUser(ctx context.Context, userID string) ([]ChatSession, error) {
+func (r *MemoryRepository) GetChatSessionsByUser(ctx context.Context, userID string) ([]domain.ChatSession, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	sessions := make([]ChatSession, 0)
+	sessions := make([]domain.ChatSession, 0)
 	for _, session := range r.sessions {
 		if session.UserID == userID {
 			sessions = append(sessions, session)
 		}
 	}
 
-	slices.SortFunc(sessions, func(a, b ChatSession) int {
+	slices.SortFunc(sessions, func(a, b domain.ChatSession) int {
 		if a.CreatedAt.Equal(b.CreatedAt) {
 			return 0
 		}
@@ -63,10 +67,10 @@ func (r *MemoryRepository) GetChatSessionsByUser(ctx context.Context, userID str
 	return sessions, nil
 }
 
-func (r *MemoryRepository) GetChatSessionByID(ctx context.Context, sessionID string) (ChatSession, error) {
+func (r *MemoryRepository) GetChatSessionByID(ctx context.Context, sessionID string) (domain.ChatSession, error) {
 	id, err := uuid.Parse(sessionID)
 	if err != nil {
-		return ChatSession{}, fmt.Errorf("invalid session id: %w", err)
+		return domain.ChatSession{}, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
 	}
 
 	r.mu.RLock()
@@ -74,18 +78,18 @@ func (r *MemoryRepository) GetChatSessionByID(ctx context.Context, sessionID str
 
 	session, ok := r.sessions[id]
 	if !ok {
-		return ChatSession{}, fmt.Errorf("session not found")
+		return domain.ChatSession{}, domain.ErrSessionNotFound
 	}
 	return session, nil
 }
 
-func (r *MemoryRepository) SaveMessage(ctx context.Context, sessionID string, userID string, role string, content string) (ChatMessage, error) {
+func (r *MemoryRepository) SaveMessage(ctx context.Context, sessionID, userID string, role domain.Role, content string) (domain.ChatMessage, error) {
 	sessionUUID, err := uuid.Parse(sessionID)
 	if err != nil {
-		return ChatMessage{}, fmt.Errorf("invalid session id: %w", err)
+		return domain.ChatMessage{}, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
 	}
 
-	message := ChatMessage{
+	message := domain.ChatMessage{
 		ID:        uuid.New(),
 		SessionID: sessionUUID,
 		UserID:    userID,
@@ -98,28 +102,28 @@ func (r *MemoryRepository) SaveMessage(ctx context.Context, sessionID string, us
 	defer r.mu.Unlock()
 
 	if _, ok := r.sessions[sessionUUID]; !ok {
-		return ChatMessage{}, fmt.Errorf("session not found")
+		return domain.ChatMessage{}, domain.ErrSessionNotFound
 	}
 
 	r.messages[sessionUUID] = append(r.messages[sessionUUID], message)
 	return message, nil
 }
 
-func (r *MemoryRepository) GetMessagesBySession(ctx context.Context, sessionID string) ([]ChatMessage, error) {
+func (r *MemoryRepository) GetMessagesBySession(ctx context.Context, sessionID string) ([]domain.ChatMessage, error) {
 	sessionUUID, err := uuid.Parse(sessionID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid session id: %w", err)
+		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
 	}
 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	if _, ok := r.sessions[sessionUUID]; !ok {
-		return nil, fmt.Errorf("session not found")
+		return nil, domain.ErrSessionNotFound
 	}
 
 	msgs := r.messages[sessionUUID]
-	out := make([]ChatMessage, len(msgs))
+	out := make([]domain.ChatMessage, len(msgs))
 	copy(out, msgs)
 	return out, nil
 }

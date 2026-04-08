@@ -16,19 +16,23 @@ endpoints:
     path: /providers
     handler: ListProviders
     auth: true
-  - method: GET
-    path: /sessions
-    handler: ListSessions
-    auth: true
   - method: POST
-    path: /sessions
+    path: /chats
     handler: CreateSession
     auth: true
   - method: GET
-    path: /sessions/{sessionID}/messages
-    handler: ListMessages
+    path: /chats
+    handler: ListSessions
+    auth: true
+  - method: GET
+    path: /chats/{chatID}
+    handler: GetChat
     auth: true
   - method: POST
-    path: /sessions/{sessionID}/messages
+    path: /chats/{chatID}/messages
     handler: PostMessage
+    auth: true
+  - method: POST
+    path: /chats/{chatID}/stream
+    handler: StreamMessage
     auth: true
