@@ -194,6 +194,17 @@ Edge function deploy:
 npx supabase functions deploy register-push-token --project-ref <PROJECT_REF>
 ```
 
+## CI ve Codecov
+
+Bu proje, PR kalite kontrolü için GitHub Actions + Codecov kullanır.
+
+- CI adımları: `go mod tidy` kontrolü, `go build`, `go test`, `go vet`
+- Coverage: test sonrası `coverage.out` üretilir ve Codecov'a yüklenir
+- PR yönetimi: `codecov/patch` ve CI check'leri zorunlu kural olarak kullanılabilir
+- Amaç: merge öncesi test geçişini ve kapsam düşüşlerini görünür kılmak
+
+Codecov entegrasyonunun ilk doğrulama PR'ı: [trigger CI checkes #1](https://github.com/messivite/go-thy-case-study-backend/pull/1)
+
 ## Yerelde Çalıştırma
 
 ```bash
