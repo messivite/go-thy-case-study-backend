@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/example/thy-case-study-backend/internal/httpx"
+	"github.com/messivite/go-thy-case-study-backend/internal/httpx"
 )
 
 type AuthenticatedUser struct {

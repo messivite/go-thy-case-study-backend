@@ -1,4 +1,4 @@
-module github.com/example/thy-case-study-backend
+module github.com/messivite/go-thy-case-study-backend
 
 go 1.25.0
 

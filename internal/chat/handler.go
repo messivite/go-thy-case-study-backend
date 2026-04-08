@@ -11,10 +11,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	usecase "github.com/example/thy-case-study-backend/internal/application/chat"
-	"github.com/example/thy-case-study-backend/internal/auth"
-	domain "github.com/example/thy-case-study-backend/internal/domain/chat"
-	"github.com/example/thy-case-study-backend/internal/httpx"
+	usecase "github.com/messivite/go-thy-case-study-backend/internal/application/chat"
+	"github.com/messivite/go-thy-case-study-backend/internal/auth"
+	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
+	"github.com/messivite/go-thy-case-study-backend/internal/httpx"
 )
 
 type Handler struct {

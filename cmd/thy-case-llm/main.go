@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/example/thy-case-study-backend/internal/config"
+	"github.com/messivite/go-thy-case-study-backend/internal/config"
 )
 
 const version = "0.2.0"

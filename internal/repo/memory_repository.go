@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	domain "github.com/example/thy-case-study-backend/internal/domain/chat"
+	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
 )
 
 var _ domain.Repository = (*MemoryRepository)(nil)

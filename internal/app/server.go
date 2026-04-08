@@ -5,8 +5,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/example/thy-case-study-backend/internal/auth"
-	"github.com/example/thy-case-study-backend/internal/chat"
+	"github.com/messivite/go-thy-case-study-backend/internal/auth"
+	"github.com/messivite/go-thy-case-study-backend/internal/chat"
 )
 
 type Server struct {
