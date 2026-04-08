@@ -9,4 +9,10 @@ var (
 	ErrUnauthorized        = errors.New("not authorized")
 	ErrSessionNotFound     = errors.New("session not found")
 	ErrInvalidSessionID    = errors.New("invalid session id")
+
+	ErrProviderAuthFailed  = errors.New("provider authentication failed")
+	ErrProviderTimeout     = errors.New("provider request timed out")
+	ErrProviderRateLimited = errors.New("provider rate limit exceeded")
+	ErrProviderUnavailable = errors.New("provider temporarily unavailable")
+	ErrProviderBadRequest  = errors.New("provider rejected request")
 )

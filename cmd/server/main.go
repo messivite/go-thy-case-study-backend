@@ -25,7 +25,24 @@ func main() {
 	validationMode := envOrDefault("SUPABASE_JWT_VALIDATION_MODE", "auto")
 
 	authService := auth.NewSupabaseAuthAdapter(jwtSecret, supabaseURL, validationMode, roleClaimKey)
-	repository := repo.NewMemoryRepository()
+
+	serviceRoleKey := os.Getenv("SUPABASE_SERVICE_ROLE_KEY")
+	var repository domain.Repository
+	persistence := envOrDefault("CHAT_PERSISTENCE", "supabase")
+
+	switch persistence {
+	case "supabase":
+		if supabaseURL == "" || serviceRoleKey == "" {
+			log.Println("WARN: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY empty, falling back to memory persistence")
+			repository = repo.NewMemoryRepository()
+		} else {
+			repository = repo.NewSupabaseRepository(supabaseURL, serviceRoleKey)
+			log.Println("chat persistence: supabase (postgres)")
+		}
+	default:
+		repository = repo.NewMemoryRepository()
+		log.Println("chat persistence: memory (in-process)")
+	}
 
 	registry := buildRegistry()
 

@@ -44,3 +44,19 @@ func NotFound(w http.ResponseWriter, message string) {
 func Internal(w http.ResponseWriter) {
 	WriteError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
 }
+
+func ProviderAuthFailed(w http.ResponseWriter) {
+	WriteError(w, http.StatusBadGateway, "provider_auth_failed", "Provider authentication failed")
+}
+
+func ProviderTimeout(w http.ResponseWriter) {
+	WriteError(w, http.StatusGatewayTimeout, "provider_timeout", "Provider request timed out")
+}
+
+func ProviderRateLimited(w http.ResponseWriter) {
+	WriteError(w, http.StatusTooManyRequests, "provider_rate_limited", "Provider rate limit exceeded")
+}
+
+func ProviderUnavailable(w http.ResponseWriter) {
+	WriteError(w, http.StatusBadGateway, "provider_unavailable", "Provider temporarily unavailable")
+}

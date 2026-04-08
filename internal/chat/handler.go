@@ -337,6 +337,18 @@ func writeAppError(w http.ResponseWriter, err error) {
 		httpx.BadRequest(w, err.Error())
 	case errors.Is(err, domain.ErrSessionNotFound):
 		httpx.NotFound(w, err.Error())
+	case errors.Is(err, domain.ErrUnsupportedProvider):
+		httpx.BadRequest(w, err.Error())
+	case errors.Is(err, domain.ErrProviderAuthFailed):
+		httpx.ProviderAuthFailed(w)
+	case errors.Is(err, domain.ErrProviderTimeout):
+		httpx.ProviderTimeout(w)
+	case errors.Is(err, domain.ErrProviderRateLimited):
+		httpx.ProviderRateLimited(w)
+	case errors.Is(err, domain.ErrProviderUnavailable):
+		httpx.ProviderUnavailable(w)
+	case errors.Is(err, domain.ErrProviderBadRequest):
+		httpx.BadRequest(w, err.Error())
 	default:
 		httpx.Internal(w)
 	}
