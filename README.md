@@ -1,48 +1,59 @@
 <p align="center">
   <img src="./assets/turkiye-header.svg" alt="THY Case Study Backend" width="100%" />
 </p>
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/messivite/gosupabase">
+    <img src="https://pkg.go.dev/badge/github.com/messivite/gosupabase.svg" alt="Go Reference: gosupabase" />
+  </a>
+  <a href="https://github.com/messivite/gosupabase/releases">
+    <img src="https://img.shields.io/github/v/release/messivite/gosupabase?label=gosupabase%20release" alt="gosupabase release" />
+  </a>
+  <a href="https://github.com/messivite/gosupabase/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/messivite/gosupabase" alt="License" />
+  </a>
+</p>
 
 # Thy Case Study Backend
 
-Go tabanli case-study backend. Supabase Auth + JWT claim tabanli role kontrolu kullanir, API routing/guard katmani `gosupabase` ile calisir.
+Go tabanlı bir case-study backend projesi. Supabase Auth ve JWT claim tabanlı rol kontrolü kullanır; API yönlendirme/guard katmanı `gosupabase` ile çalışır.
 
-## Mimari Ozeti
+## Mimari Özeti
 
 - **Auth:** Supabase access token (`Authorization: Bearer <jwt>`)
 - **Role modeli:** `public.user_roles` tablosu -> `custom_access_token_hook` -> JWT `claims.roles`
-- **Role enforcement:** `api.yaml` icindeki `roles: [...]` alanlari
-- **App profile modeli:** `public.profiles` (`auth.users.id` ile 1:1)
-- **Chat persistence:** su an in-memory repository (DB DSN gerektirmez)
-- **Veritabani:** Supabase Postgres (Auth tablolari + `public.profiles` + `public.user_roles` + RLS/policy)
+- **Rol kontrolü:** `api.yaml` içindeki `roles: [...]` alanları
+- **Profil modeli:** `public.profiles` (`auth.users.id` ile 1:1)
+- **Sohbet kalıcılığı:** Şu an bellek içi (in-memory) repository kullanılıyor (DB DSN gerektirmez)
+- **Veritabanı:** Supabase Postgres (Auth tabloları + `public.profiles` + `public.user_roles` + RLS/policy)
 
-## Proje Yapisi
+## Proje Yapısı
 
-- `cmd/api/main.go` - API bootstrap
-- `cmd/server/main.go` - `gosupabase dev` uyumlu bootstrap girisi
-- `internal/app` - HTTP server ve route wiring
-- `internal/auth` - Supabase JWT dogrulama adaptoru
-- `internal/chat` - chat handler/service
-- `internal/repo` - in-memory repository implementasyonu
-- `supabase/` - Supabase CLI config, functions, migrations
-- `api.yaml` - endpoint, auth ve rol kurallari
+- `cmd/api/main.go` - API başlangıç noktası
+- `cmd/server/main.go` - `gosupabase dev` ile uyumlu başlangıç noktası
+- `internal/app` - HTTP sunucu ve route bağlama katmanı
+- `internal/auth` - Supabase JWT doğrulama adaptörü
+- `internal/chat` - Chat handler/service katmanı
+- `internal/repo` - Bellek içi repository implementasyonu
+- `supabase/` - Supabase CLI config, functions ve migrations
+- `api.yaml` - Endpoint, auth ve rol kuralları
 
 ## Environment
 
 `.env.example`:
 
-- `PORT` (varsayilan `8081`)
+- `PORT` (varsayılan `8081`)
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_JWT_SECRET`
-- `SUPABASE_JWT_VALIDATION_MODE` (`auto` onerilir)
+- `SUPABASE_JWT_VALIDATION_MODE` (`auto` önerilir)
 - `SUPABASE_ROLE_CLAIM_KEY`
 - `OPENAI_API_KEY`
 - `GEMINI_API_KEY`
 
 ## Endpointler
 
-`api.yaml` altinda:
+`api.yaml` altında:
 
 - `GET /api/health` (auth yok)
 - `GET /api/me` (auth var)
@@ -52,18 +63,18 @@ Go tabanli case-study backend. Supabase Auth + JWT claim tabanli role kontrolu k
 - `GET /api/sessions/{sessionID}/messages` (auth var)
 - `POST /api/sessions/{sessionID}/messages` (auth var)
 
-## Auth + Role Akisi
+## Auth + Rol Akışı
 
-1. Kullanici login olur, Supabase access token alir.
-2. `custom_access_token_hook`, `public.user_roles` tablosunu okuyup token `claims.roles` alanini yazar.
-3. API `gosupabase` middleware ile JWT'yi dogrular.
-4. Endpointte `roles: [...]` varsa token rol(ler)i ile eslestirir, uyusmazsa `403`.
+1. Kullanıcı giriş yapar ve Supabase access token alır.
+2. `custom_access_token_hook`, `public.user_roles` tablosunu okuyup token içindeki `claims.roles` alanını yazar.
+3. API, `gosupabase` middleware ile JWT'yi doğrular.
+4. Endpointte `roles: [...]` varsa token rolleri ile eşleşme kontrolü yapılır; eşleşmezse `403` döner.
 
-Not: Rol degisikliginden sonra yeni token alinmasi gerekir (logout/login veya token refresh).
+Not: Rol değişikliğinden sonra yeni token alınması gerekir (logout/login veya token refresh).
 
-## Role Atama
+## Rol Atama
 
-Bir kullaniciya rol eklemek:
+Bir kullanıcıya rol eklemek:
 
 ```sql
 insert into public.user_roles (user_id, role)
@@ -71,20 +82,20 @@ values ('USER_UUID_HERE'::uuid, 'editor')
 on conflict (user_id, role) do nothing;
 ```
 
-## Profiles Akisi
+## Profiles Akışı
 
-- `auth.users` insert oldugunda trigger `public.profiles` satiri olusturur.
-- `profiles.is_anonymous`, `auth.users.is_anonymous` ile doldurulur/guncellenir.
-- `display_name`, `avatar_url` gibi app alanlari uygulama tarafindan update edilir.
+- `auth.users` kaydı oluştuğunda trigger ile `public.profiles` satırı açılır.
+- `profiles.is_anonymous`, `auth.users.is_anonymous` alanından doldurulur/güncellenir.
+- `display_name`, `avatar_url` gibi uygulama alanları uygulama katmanından update edilir.
 
 ## PostgreSQL (Supabase) Veri Modeli
 
-- `auth.users`: Supabase Auth'in sistem tablosu (kayit/login kimlik kaynagi)
-- `public.profiles`: uygulama profil verisi (`auth.users.id` ile birebir)
-- `public.user_roles`: kullaniciya birden fazla rol atamasi icin baglanti tablosu
-- RLS/policy kurallari Postgres seviyesinde uygulanir, API tarafi JWT claim ile yetkiyi dogrular
+- `auth.users`: Supabase Auth sistem tablosu (kayıt/giriş kimlik kaynağı)
+- `public.profiles`: Uygulama profil verisi (`auth.users.id` ile birebir)
+- `public.user_roles`: Kullanıcıya birden fazla rol atamak için ilişki tablosu
+- RLS/policy kuralları Postgres seviyesinde uygulanır, API tarafı JWT claim ile yetki doğrular
 
-## Supabase Kurulum Komutlari
+## Supabase Kurulum Komutları
 
 Projeyi linkle:
 
@@ -92,7 +103,7 @@ Projeyi linkle:
 npx supabase link --project-ref <PROJECT_REF>
 ```
 
-Migrationlari uygula:
+Migrationları uygula:
 
 ```bash
 npx supabase db push --linked
@@ -104,7 +115,7 @@ Edge function deploy:
 npx supabase functions deploy register-push-token --project-ref <PROJECT_REF>
 ```
 
-## Local Calistirma
+## Yerelde Çalıştırma
 
 ```bash
 gosupabase dev
@@ -118,6 +129,6 @@ go run ./cmd/api
 
 ## Notlar
 
-- `supabase/migrations` altinda bazi migrationlar gecis/legacy amacli tutuluyor.
-- Kaynak role modeli olarak `public.user_roles` kabul edilmelidir.
-- `public.users` yeni gelistirmede kullanilmaz; profile icin `public.profiles` kullanilir.
+- `supabase/migrations` altında bazı migration dosyaları geçiş/legacy amacıyla tutuluyor.
+- Kaynak rol modeli olarak `public.user_roles` kullanılmalıdır.
+- `public.users` yeni geliştirmede kullanılmaz; profil için `public.profiles` kullanılır.
