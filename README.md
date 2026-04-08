@@ -90,6 +90,50 @@ values ('USER_UUID_HERE'::uuid, 'editor')
 on conflict (user_id, role) do nothing;
 ```
 
+Admin rolü vermek:
+
+```sql
+insert into public.user_roles (user_id, role)
+values ('USER_UUID_HERE'::uuid, 'admin')
+on conflict (user_id, role) do nothing;
+```
+
+Admin rolünü kaldırmak:
+
+```sql
+delete from public.user_roles
+where user_id = 'USER_UUID_HERE'::uuid
+  and role = 'admin';
+```
+
+Kullanıcının mevcut rollerini görmek:
+
+```sql
+select user_id, role
+from public.user_roles
+where user_id = 'USER_UUID_HERE'::uuid;
+```
+
+Mevcut rolü güncellemek (ör. `admin` -> `editor`):
+
+```sql
+update public.user_roles
+set role = 'editor'
+where user_id = 'USER_UUID_HERE'::uuid
+  and role = 'admin';
+```
+
+## Rol Değişimi Nasıl Tetikleniyor?
+
+Rol yönetimi akışı otomatik çalışır:
+
+1. `public.user_roles` tablosuna `insert/update/delete` yapılır.
+2. `trg_user_roles_sync_auth_metadata` trigger'ı tetiklenir.
+3. Trigger, `auth.users.raw_app_meta_data.roles` alanını senkronlar.
+4. `custom_access_token_hook`, yeni token üretiminde `public.user_roles` tablosunu okuyup `claims.roles` alanını yazar.
+
+Not: Token immutable olduğu için mevcut token değişmez. Rol değişikliği sonrası kullanıcı yeni token almalıdır (logout/login veya refresh).
+
 ## Profiles Akışı
 
 - `auth.users` kaydı oluştuğunda trigger ile `public.profiles` satırı açılır.
