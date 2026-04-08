@@ -26,11 +26,15 @@ func NewHandler(uc *usecase.UseCase) *Handler {
 }
 
 type createSessionRequest struct {
-	Title string `json:"title"`
+	Title    string `json:"title"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 type createSessionResponse struct {
-	ID string `json:"id"`
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
 }
 
 type postMessageRequest struct {
@@ -41,8 +45,10 @@ type postMessageRequest struct {
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role     string `json:"role"`
+	Content  string `json:"content"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 type assistantResponse struct {
@@ -141,13 +147,17 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.uc.CreateSession(r.Context(), user.UserID, req.Title)
+	session, err := h.uc.CreateSession(r.Context(), user.UserID, req.Title, req.Provider, req.Model)
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, createSessionResponse{ID: session.ID.String()})
+	writeJSON(w, http.StatusCreated, createSessionResponse{
+		ID:       session.ID.String(),
+		Provider: session.DefaultProvider,
+		Model:    session.DefaultModel,
+	})
 }
 
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
@@ -180,11 +190,18 @@ func (h *Handler) GetChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rootP, rootM := lastAssistantLLMFromMessages(messages)
+	if rootP == "" && rootM == "" {
+		rootP, rootM = session.LastProvider, session.LastModel
+	}
+	if rootP == "" && rootM == "" {
+		rootP, rootM = session.DefaultProvider, session.DefaultModel
+	}
 	resp := chatDetailResponse{
 		ID:       session.ID.String(),
 		Title:    session.Title,
-		Provider: session.LastProvider,
-		Model:    session.LastModel,
+		Provider: rootP,
+		Model:    rootM,
 		Messages: toAPIMessages(messages),
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -211,8 +228,13 @@ func (h *Handler) PostMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, assistantResponse{
-		AssistantMessage: chatMessage{Role: string(assistantMsg.Role), Content: assistantMsg.Content},
-		Usage:            usage,
+		AssistantMessage: chatMessage{
+			Role:     string(assistantMsg.Role),
+			Content:  assistantMsg.Content,
+			Provider: assistantMsg.Provider,
+			Model:    assistantMsg.Model,
+		},
+		Usage: usage,
 	})
 }
 
@@ -271,7 +293,11 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 				if ferr != nil {
 					_ = writeSSE(w, map[string]any{"type": "error", "message": ferr.Error()})
 				} else {
-					_ = writeSSE(w, map[string]any{"type": "meta", "meta": map[string]any{"assistantMessageId": msg.ID.String()}})
+					_ = writeSSE(w, map[string]any{"type": "meta", "meta": map[string]any{
+						"assistantMessageId": msg.ID.String(),
+						"provider":           msg.Provider,
+						"model":              msg.Model,
+					}})
 					_ = writeSSE(w, map[string]any{"type": "done"})
 				}
 				flusher.Flush()
@@ -315,9 +341,26 @@ func toDomainMessages(messages []chatMessage) []domain.ChatMessage {
 func toAPIMessages(messages []domain.ChatMessage) []chatMessage {
 	out := make([]chatMessage, 0, len(messages))
 	for _, m := range messages {
-		out = append(out, chatMessage{Role: string(m.Role), Content: m.Content})
+		out = append(out, chatMessage{
+			Role:     string(m.Role),
+			Content:  m.Content,
+			Provider: m.Provider,
+			Model:    m.Model,
+		})
 	}
 	return out
+}
+
+func lastAssistantLLMFromMessages(msgs []domain.ChatMessage) (provider, model string) {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role != domain.RoleAssistant {
+			continue
+		}
+		if msgs[i].Provider != "" || msgs[i].Model != "" {
+			return msgs[i].Provider, msgs[i].Model
+		}
+	}
+	return "", ""
 }
 
 func writeSSE(w http.ResponseWriter, payload any) error {

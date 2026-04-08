@@ -23,12 +23,14 @@ func (r Role) Valid() bool {
 }
 
 type ChatSession struct {
-	ID           uuid.UUID
-	UserID       string
-	Title        string
-	CreatedAt    time.Time
-	LastProvider string
-	LastModel    string
+	ID              uuid.UUID
+	UserID          string
+	Title           string
+	CreatedAt       time.Time
+	LastProvider    string
+	LastModel       string
+	DefaultProvider string
+	DefaultModel    string
 }
 
 type ChatMessage struct {
@@ -38,6 +40,8 @@ type ChatMessage struct {
 	Role      Role
 	Content   string
 	CreatedAt time.Time
+	Provider  string
+	Model     string
 }
 
 type StreamEventType string

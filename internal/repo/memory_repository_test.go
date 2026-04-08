@@ -11,7 +11,7 @@ func TestMemoryRepositorySessionLifecycle(t *testing.T) {
 	r := NewMemoryRepository()
 	ctx := context.Background()
 
-	session, err := r.CreateChatSession(ctx, "user-1", "hello")
+	session, err := r.CreateChatSession(ctx, "user-1", "hello", "", "")
 	if err != nil {
 		t.Fatalf("create session failed: %v", err)
 	}
@@ -40,12 +40,12 @@ func TestMemoryRepositoryMessages(t *testing.T) {
 	r := NewMemoryRepository()
 	ctx := context.Background()
 
-	session, err := r.CreateChatSession(ctx, "user-2", "chat")
+	session, err := r.CreateChatSession(ctx, "user-2", "chat", "", "")
 	if err != nil {
 		t.Fatalf("create session failed: %v", err)
 	}
 
-	_, err = r.SaveMessage(ctx, session.ID.String(), "user-2", domain.RoleUser, "hi")
+	_, err = r.SaveMessage(ctx, session.ID.String(), "user-2", domain.RoleUser, "hi", "", "")
 	if err != nil {
 		t.Fatalf("save message failed: %v", err)
 	}

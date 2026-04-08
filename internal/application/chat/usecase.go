@@ -21,8 +21,18 @@ func NewUseCase(repo domain.Repository, registry *provider.Registry) *UseCase {
 	return &UseCase{repo: repo, registry: registry}
 }
 
-func (uc *UseCase) CreateSession(ctx context.Context, userID, title string) (domain.ChatSession, error) {
-	return uc.repo.CreateChatSession(ctx, userID, title)
+func (uc *UseCase) CreateSession(ctx context.Context, userID, title, provider, model string) (domain.ChatSession, error) {
+	dp := strings.TrimSpace(provider)
+	dm := strings.TrimSpace(model)
+	if dp == "" {
+		dp = uc.registry.Default()
+	}
+	if dm == "" {
+		if meta, ok := uc.registry.Meta(dp); ok {
+			dm = strings.TrimSpace(meta.DefaultModel)
+		}
+	}
+	return uc.repo.CreateChatSession(ctx, userID, title, dp, dm)
 }
 
 func (uc *UseCase) ListSessions(ctx context.Context, userID string) ([]domain.ChatSession, error) {
@@ -124,16 +134,16 @@ func (uc *UseCase) SendMessage(
 	usage := domain.NormalizeUsage(resp.Usage)
 	observability.LLMResponse(resolvedProvider, usage.Model, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens, time.Since(start).Milliseconds())
 
-	if _, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, content); err != nil {
+	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, usage.Model)
+
+	if _, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, content, resolvedProvider, effModel); err != nil {
 		return domain.ChatMessage{}, nil, err
 	}
 
-	assistant, err := uc.repo.SaveMessage(ctx, chatID, "", domain.RoleAssistant, resp.Content)
+	assistant, err := uc.repo.SaveMessage(ctx, chatID, "", domain.RoleAssistant, resp.Content, resolvedProvider, effModel)
 	if err != nil {
 		return domain.ChatMessage{}, nil, err
 	}
-
-	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, usage.Model)
 	if err := uc.repo.UpdateSessionLastLLM(ctx, chatID, resolvedProvider, effModel); err != nil {
 		observability.Info("session.last_llm.update_failed", map[string]any{"session_id": chatID, "err": err.Error()})
 	}
@@ -194,11 +204,11 @@ func (uc *UseCase) StreamMessage(
 		return nil, nil, nil, err
 	}
 
-	if _, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, prompt); err != nil {
+	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, "")
+	if _, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, prompt, resolvedProvider, effModel); err != nil {
 		return nil, nil, nil, err
 	}
 
-	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, "")
 	usage := map[string]any{
 		"provider": resolvedProvider,
 		"model":    effModel,
@@ -211,7 +221,7 @@ func (uc *UseCase) StreamMessage(
 			"session_id": chatID,
 			"chars":      len(assistantContent),
 		})
-		msg, err := uc.repo.SaveMessage(ctx, chatID, "", domain.RoleAssistant, assistantContent)
+		msg, err := uc.repo.SaveMessage(ctx, chatID, "", domain.RoleAssistant, assistantContent, resolvedProvider, effModel)
 		if err != nil {
 			return domain.ChatMessage{}, err
 		}

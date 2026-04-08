@@ -256,9 +256,9 @@ go run ./cmd/thy-case-llm doctor
 | `GET` | `/api/health` | Hayır | Sağlık kontrolü |
 | `GET` | `/api/me` | Evet | JWT'deki kullanıcı bilgisi |
 | `GET` | `/api/providers` | Evet | Aktif LLM provider'ları (default bilgisi dahil) |
-| `POST` | `/api/chats` | Evet | Yeni sohbet oturumu oluştur |
+| `POST` | `/api/chats` | Evet | Yeni sohbet; gövdede isteğe bağlı `provider`, `model` (`providers.yaml` / `GET /api/providers`). Cevap: `id`, `provider`, `model` (session default’ları) |
 | `GET` | `/api/chats` | Evet | Sohbet listesi |
-| `GET` | `/api/chats/{chatID}` | Evet | Sohbet detayı + mesaj geçmişi; `provider` / `model` son başarılı asistan yanıtı |
+| `GET` | `/api/chats/{chatID}` | Evet | Sohbet + mesajlar; her asistan satırında `provider`/`model` (yeni mesajlardan); kökte özet = son dolu asistan veya session |
 | `POST` | `/api/chats/{chatID}/messages` | Evet | Mesaj gönder (non-stream) |
 | `POST` | `/api/chats/{chatID}/stream` | Evet | Mesaj gönder (SSE stream) |
 
@@ -381,14 +381,39 @@ go run ./cmd/api
 TOKEN="<ACCESS_TOKEN>"
 ```
 
-Chat oluştur:
+**Sohbet oluştur — `POST /api/chats`**
+
+İstek gövdesi (JSON):
+
+| Alan | Zorunlu | Açıklama |
+|------|---------|----------|
+| `title` | Hayır | Sohbet başlığı (boş string olabilir) |
+| `provider` | Hayır | Örn. `openai`, `gemini`. Yoksa `providers.yaml` içindeki `default` provider kullanılır ve `chat_sessions.default_provider` olarak kaydedilir. |
+| `model` | Hayır | API model id (örn. `gemini-2.5-flash`). Yoksa seçilen provider’ın varsayılan model’i kullanılır. |
+
+Bu `provider` / `model` değerleri oturum açılırken veritabanına yazılır; henüz mesaj yokken `GET /api/chats/{chatID}` cevabındaki kök `provider` / `model` alanları da buradan gelir (sonra mesajlar geldikçe öncelik mesajlardaki / son tur metadatasına göre güncellenir).
+
+**201 cevap gövdesi:** `id` (UUID string), `provider`, `model` — kaydedilen session default’ları.
+
+Sadece başlık:
 
 ```bash
 curl -X POST "http://localhost:8081/api/chats" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"title":"ilk chat"}'
+  -d '{"title":"ilk test chat session"}'
 ```
+
+Başlık + açık provider/model (Postman’da **Body → raw → JSON**; **Authorization’da yalnızca Bearer token** kullan — hem header hem ayrıca “Bearer Token” auth’u işaretlemek token’ı iki kez gönderebilir):
+
+```bash
+curl -X POST "http://localhost:8081/api/chats" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"ilk test chat session","provider":"gemini","model":"gemini-2.5-flash"}'
+```
+
+Hangi isimlerin geçerli olduğunu görmek için: `GET /api/providers` veya repodaki `providers.yaml`.
 
 Chat listele:
 
@@ -404,7 +429,7 @@ curl "http://localhost:8081/api/chats/<CHAT_ID>" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Yanıtta `provider` ve `model` alanları, bu oturumda en son kaydedilen asistan cevabının hangi LLM ile üretildiğini gösterir (henüz yoksa boş string). Supabase kullanıyorsan `supabase db push` / migration ile `chat_sessions.last_provider` ve `last_model` kolonlarının geldiğinden emin ol.
+Kök `provider`/`model` son anlamlı asistan cevabının özetidir. Her mesajda asistan satırları için `provider`/`model` vardır (eski kayıtlar migration öncesi boş/omit). `chat_messages.provider`, `chat_messages.model` ve isteğe bağlı session özeti için migration’ları uygula (`supabase db push`).
 
 Mesaj gönder (non-stream):
 
