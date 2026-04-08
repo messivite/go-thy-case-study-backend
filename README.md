@@ -5,6 +5,12 @@
   <a href="https://pkg.go.dev/github.com/messivite/gosupabase">
     <img src="https://pkg.go.dev/badge/github.com/messivite/gosupabase.svg" alt="Go Reference: gosupabase" />
   </a>
+  <a href="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/ci.yml">
+    <img src="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/ci.yml/badge.svg" alt="CI" />
+  </a>
+  <a href="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/release.yml">
+    <img src="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/release.yml/badge.svg" alt="Release" />
+  </a>
   <a href="https://github.com/messivite/gosupabase/releases">
     <img src="https://img.shields.io/github/v/release/messivite/gosupabase?label=gosupabase%20release" alt="gosupabase release" />
   </a>
