@@ -25,12 +25,6 @@ Paket; YAML-first endpoint yönetimi, Supabase JWT doğrulaması ve role-based r
 - GitHub: [github.com/messivite/gosupabase](https://github.com/messivite/gosupabase)
 - Go Package: [pkg.go.dev/github.com/messivite/gosupabase](https://pkg.go.dev/github.com/messivite/gosupabase)
 
-<p>
-  <a href="https://pkg.go.dev/github.com/messivite/gosupabase">
-    <img src="https://pkg.go.dev/badge/github.com/messivite/gosupabase.svg" alt="Go Reference: gosupabase" />
-  </a>
-</p>
-
 ## Mimari Özeti
 
 - **Auth:** Supabase access token (`Authorization: Bearer <jwt>`)
