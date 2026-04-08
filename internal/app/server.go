@@ -25,10 +25,15 @@ func NewServer(authService auth.AuthService, chatHandler *chat.Handler) *Server 
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(auth.AuthMiddleware(authService))
-			r.Get("/me", chatHandler.Me)
-		r.Post("/sessions", chatHandler.CreateSession)
-		r.Get("/sessions/{sessionID}/messages", chatHandler.ListMessages)
-		r.Post("/sessions/{sessionID}/messages", chatHandler.PostMessage)
+		r.Get("/me", chatHandler.Me)
+		r.Get("/providers", chatHandler.ListProviders)
+
+		// chat API
+		r.Post("/chats", chatHandler.CreateSession)
+		r.Get("/chats", chatHandler.ListSessions)
+		r.Get("/chats/{chatID}", chatHandler.GetChat)
+		r.Post("/chats/{chatID}/messages", chatHandler.PostMessage)
+		r.Post("/chats/{chatID}/stream", chatHandler.StreamMessage)
 	})
 
 	return &Server{router: r}

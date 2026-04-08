@@ -3,6 +3,8 @@ package repo
 import (
 	"context"
 	"testing"
+
+	domain "github.com/example/thy-case-study-backend/internal/domain/chat"
 )
 
 func TestMemoryRepositorySessionLifecycle(t *testing.T) {
@@ -32,7 +34,7 @@ func TestMemoryRepositoryMessages(t *testing.T) {
 		t.Fatalf("create session failed: %v", err)
 	}
 
-	_, err = r.SaveMessage(ctx, session.ID.String(), "user-2", "user", "hi")
+	_, err = r.SaveMessage(ctx, session.ID.String(), "user-2", domain.RoleUser, "hi")
 	if err != nil {
 		t.Fatalf("save message failed: %v", err)
 	}
