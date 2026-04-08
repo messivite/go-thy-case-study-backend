@@ -46,6 +46,8 @@ THY case study için yazdığım Go backend. Auth Supabase, roller JWT claim üz
 
 **Go modülü:** `github.com/messivite/go-thy-case-study-backend` — `go.mod` ile bütün `import` satırları bununla uyumlu; `github.com/example/...` kullanılmıyor (CI’da yanlış modül aranıp patlamasın diye).
 
+**Sürüm notları:** [CHANGELOG.md](CHANGELOG.md) · [RELEASE_NOTES.md](RELEASE_NOTES.md) (tag / GitHub Release akışı)
+
 ## Built With gosupabase
 
 `gosupabase` paketini ben yazdım; bu repo onun üstünde. YAML’dan endpoint, JWT doğrulama, role guard işi oradan geliyor.
