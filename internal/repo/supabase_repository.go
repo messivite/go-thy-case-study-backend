@@ -84,6 +84,19 @@ func (r *SupabaseRepository) GetChatSessionByID(ctx context.Context, sessionID s
 	return rows[0].toDomain(), nil
 }
 
+func (r *SupabaseRepository) UpdateSessionLastLLM(ctx context.Context, sessionID, provider, model string) error {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+
+	body := map[string]any{
+		"last_provider": provider,
+		"last_model":    model,
+	}
+	path := fmt.Sprintf("/chat_sessions?id=eq.%s", sessionID)
+	return r.doRequest(ctx, http.MethodPatch, path, body, nil)
+}
+
 func (r *SupabaseRepository) SaveMessage(ctx context.Context, sessionID, userID string, role domain.Role, content string) (domain.ChatMessage, error) {
 	if _, err := uuid.Parse(sessionID); err != nil {
 		return domain.ChatMessage{}, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
@@ -179,22 +192,31 @@ func (r *SupabaseRepository) doRequest(ctx context.Context, method, path string,
 // ---------------------------------------------------------------------------
 
 type chatSessionRow struct {
-	ID        string `json:"id"`
-	UserID    string `json:"user_id"`
-	Title     string `json:"title"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID            string  `json:"id"`
+	UserID        string  `json:"user_id"`
+	Title         string  `json:"title"`
+	CreatedAt     string  `json:"created_at"`
+	UpdatedAt     string  `json:"updated_at"`
+	LastProvider  *string `json:"last_provider"`
+	LastModel     *string `json:"last_model"`
 }
 
 func (r chatSessionRow) toDomain() domain.ChatSession {
 	id, _ := uuid.Parse(r.ID)
 	createdAt, _ := time.Parse(time.RFC3339Nano, r.CreatedAt)
-	return domain.ChatSession{
+	s := domain.ChatSession{
 		ID:        id,
 		UserID:    r.UserID,
 		Title:     r.Title,
 		CreatedAt: createdAt,
 	}
+	if r.LastProvider != nil {
+		s.LastProvider = *r.LastProvider
+	}
+	if r.LastModel != nil {
+		s.LastModel = *r.LastModel
+	}
+	return s
 }
 
 type chatMessageRow struct {

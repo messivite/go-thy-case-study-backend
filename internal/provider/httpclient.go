@@ -90,6 +90,8 @@ func MapHTTPError(statusCode int, providerName string) error {
 		return fmt.Errorf("%w: %s returned 429", domain.ErrProviderRateLimited, providerName)
 	case statusCode == http.StatusBadRequest:
 		return fmt.Errorf("%w: %s returned 400", domain.ErrProviderBadRequest, providerName)
+	case statusCode == http.StatusNotFound:
+		return fmt.Errorf("%w: %s returned 404 (model veya endpoint yanlış olabilir)", domain.ErrProviderBadRequest, providerName)
 	case statusCode == http.StatusRequestTimeout:
 		return fmt.Errorf("%w: %s returned %d", domain.ErrProviderTimeout, providerName, statusCode)
 	case statusCode >= 500:

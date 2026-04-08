@@ -65,6 +65,15 @@ func (r *Registry) Default() string {
 	return r.defaultName
 }
 
+// Meta returns registered metadata for a provider. Empty name uses the registry default provider.
+func (r *Registry) Meta(name string) (ProviderMeta, bool) {
+	if name == "" {
+		name = r.defaultName
+	}
+	m, ok := r.meta[name]
+	return m, ok
+}
+
 func (r *Registry) SetDefault(name string) error {
 	if _, ok := r.providers[name]; !ok {
 		return fmt.Errorf("%w: %s", domain.ErrUnsupportedProvider, name)

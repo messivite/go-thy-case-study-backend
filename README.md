@@ -121,7 +121,7 @@ providers:
     model: gpt-4o
     env_key: OPENAI_API_KEY
   - name: gemini
-    model: gemini-2.0-flash
+    model: gemini-2.5-flash
     env_key: GEMINI_API_KEY
 ```
 
@@ -258,7 +258,7 @@ go run ./cmd/thy-case-llm doctor
 | `GET` | `/api/providers` | Evet | Aktif LLM provider'ları (default bilgisi dahil) |
 | `POST` | `/api/chats` | Evet | Yeni sohbet oturumu oluştur |
 | `GET` | `/api/chats` | Evet | Sohbet listesi |
-| `GET` | `/api/chats/{chatID}` | Evet | Sohbet detayı + mesaj geçmişi |
+| `GET` | `/api/chats/{chatID}` | Evet | Sohbet detayı + mesaj geçmişi; `provider` / `model` son başarılı asistan yanıtı |
 | `POST` | `/api/chats/{chatID}/messages` | Evet | Mesaj gönder (non-stream) |
 | `POST` | `/api/chats/{chatID}/stream` | Evet | Mesaj gönder (SSE stream) |
 
@@ -404,6 +404,8 @@ curl "http://localhost:8081/api/chats/<CHAT_ID>" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Yanıtta `provider` ve `model` alanları, bu oturumda en son kaydedilen asistan cevabının hangi LLM ile üretildiğini gösterir (henüz yoksa boş string). Supabase kullanıyorsan `supabase db push` / migration ile `chat_sessions.last_provider` ve `last_model` kolonlarının geldiğinden emin ol.
+
 Mesaj gönder (non-stream):
 
 ```bash
@@ -427,7 +429,7 @@ curl -N -X POST "http://localhost:8081/api/chats/<CHAT_ID>/stream" \
   -H "Content-Type: application/json" \
   -d '{
     "provider":"gemini",
-    "model":"gemini-1.5-flash",
+    "model":"gemini-2.5-flash",
     "messages":[
       {"role":"user","content":"Bana kisa bir selamlama yaz"}
     ]

@@ -106,22 +106,23 @@ func (uc *UseCase) SendMessage(
 	if err != nil {
 		return domain.ChatMessage{}, nil, err
 	}
+	resolvedProvider := p.Name()
 
-	observability.LLMRequest(providerName, model, userID, chatID)
+	observability.LLMRequest(resolvedProvider, model, userID, chatID)
 	start := time.Now()
 
 	resp, err := p.Complete(ctx, domain.ProviderRequest{
-		Provider: providerName,
+		Provider: resolvedProvider,
 		Model:    model,
 		Messages: reqMessages,
 	})
 	if err != nil {
-		observability.LLMError(providerName, model, err)
+		observability.LLMError(resolvedProvider, model, err)
 		return domain.ChatMessage{}, nil, err
 	}
 
 	usage := domain.NormalizeUsage(resp.Usage)
-	observability.LLMResponse(providerName, usage.Model, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens, time.Since(start).Milliseconds())
+	observability.LLMResponse(resolvedProvider, usage.Model, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens, time.Since(start).Milliseconds())
 
 	if _, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, content); err != nil {
 		return domain.ChatMessage{}, nil, err
@@ -130,6 +131,11 @@ func (uc *UseCase) SendMessage(
 	assistant, err := uc.repo.SaveMessage(ctx, chatID, "", domain.RoleAssistant, resp.Content)
 	if err != nil {
 		return domain.ChatMessage{}, nil, err
+	}
+
+	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, usage.Model)
+	if err := uc.repo.UpdateSessionLastLLM(ctx, chatID, resolvedProvider, effModel); err != nil {
+		observability.Info("session.last_llm.update_failed", map[string]any{"session_id": chatID, "err": err.Error()})
 	}
 
 	return assistant, resp.Usage, nil
@@ -174,16 +180,17 @@ func (uc *UseCase) StreamMessage(
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	resolvedProvider := p.Name()
 
-	observability.LLMRequest(providerName, model, userID, chatID)
+	observability.LLMRequest(resolvedProvider, model, userID, chatID)
 
 	events, err := p.Stream(ctx, domain.ProviderRequest{
-		Provider: providerName,
+		Provider: resolvedProvider,
 		Model:    model,
 		Messages: reqMessages,
 	})
 	if err != nil {
-		observability.LLMError(providerName, model, err)
+		observability.LLMError(resolvedProvider, model, err)
 		return nil, nil, nil, err
 	}
 
@@ -191,22 +198,43 @@ func (uc *UseCase) StreamMessage(
 		return nil, nil, nil, err
 	}
 
+	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, "")
 	usage := map[string]any{
-		"provider": providerName,
-		"model":    model,
+		"provider": resolvedProvider,
+		"model":    effModel,
 	}
 
 	finalize := func(assistantContent string) (domain.ChatMessage, error) {
 		observability.Info("llm.stream.complete", map[string]any{
-			"provider":   providerName,
-			"model":      model,
+			"provider":   resolvedProvider,
+			"model":      effModel,
 			"session_id": chatID,
 			"chars":      len(assistantContent),
 		})
-		return uc.repo.SaveMessage(ctx, chatID, "", domain.RoleAssistant, assistantContent)
+		msg, err := uc.repo.SaveMessage(ctx, chatID, "", domain.RoleAssistant, assistantContent)
+		if err != nil {
+			return domain.ChatMessage{}, err
+		}
+		if err := uc.repo.UpdateSessionLastLLM(ctx, chatID, resolvedProvider, effModel); err != nil {
+			observability.Info("session.last_llm.update_failed", map[string]any{"session_id": chatID, "err": err.Error()})
+		}
+		return msg, nil
 	}
 
 	return events, usage, finalize, nil
+}
+
+func effectiveLLMModel(reg *provider.Registry, resolvedProvider, requestModel, usageModel string) string {
+	if s := strings.TrimSpace(usageModel); s != "" {
+		return s
+	}
+	if s := strings.TrimSpace(requestModel); s != "" {
+		return s
+	}
+	if meta, ok := reg.Meta(resolvedProvider); ok {
+		return strings.TrimSpace(meta.DefaultModel)
+	}
+	return ""
 }
 
 func (uc *UseCase) ListProviders() []provider.ProviderMeta {

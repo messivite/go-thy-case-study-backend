@@ -83,6 +83,25 @@ func (r *MemoryRepository) GetChatSessionByID(ctx context.Context, sessionID str
 	return session, nil
 }
 
+func (r *MemoryRepository) UpdateSessionLastLLM(ctx context.Context, sessionID, provider, model string) error {
+	id, err := uuid.Parse(sessionID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	s, ok := r.sessions[id]
+	if !ok {
+		return domain.ErrSessionNotFound
+	}
+	s.LastProvider = provider
+	s.LastModel = model
+	r.sessions[id] = s
+	return nil
+}
+
 func (r *MemoryRepository) SaveMessage(ctx context.Context, sessionID, userID string, role domain.Role, content string) (domain.ChatMessage, error) {
 	sessionUUID, err := uuid.Parse(sessionID)
 	if err != nil {

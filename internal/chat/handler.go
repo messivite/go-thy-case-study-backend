@@ -51,9 +51,11 @@ type assistantResponse struct {
 }
 
 type chatDetailResponse struct {
-	ID       string        `json:"id"`
-	Title    string        `json:"title"`
-	Messages []chatMessage `json:"messages"`
+	ID        string        `json:"id"`
+	Title     string        `json:"title"`
+	Provider  string        `json:"provider"`
+	Model     string        `json:"model"`
+	Messages  []chatMessage `json:"messages"`
 }
 
 type chatListItemResponse struct {
@@ -181,6 +183,8 @@ func (h *Handler) GetChat(w http.ResponseWriter, r *http.Request) {
 	resp := chatDetailResponse{
 		ID:       session.ID.String(),
 		Title:    session.Title,
+		Provider: session.LastProvider,
+		Model:    session.LastModel,
 		Messages: toAPIMessages(messages),
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -232,10 +236,6 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
 	streamCtx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
@@ -245,9 +245,13 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
 	meta := map[string]any{
-		"provider": req.Provider,
-		"model":    req.Model,
+		"provider": usage["provider"],
+		"model":    usage["model"],
 		"usage":    usage,
 	}
 	_ = writeSSE(w, map[string]any{"type": "meta", "meta": meta})
@@ -275,6 +279,10 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 			}
 			if ev.Type == domain.EventDelta {
 				out.WriteString(ev.Delta)
+			}
+			// Provider iç sinyali; kanal kapanınca zaten assistantMessageId + type "done" gönderilir.
+			if ev.Type == domain.EventDone {
+				continue
 			}
 			_ = writeSSE(w, map[string]any{
 				"type":    string(ev.Type),

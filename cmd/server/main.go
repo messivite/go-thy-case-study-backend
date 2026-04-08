@@ -102,8 +102,8 @@ func buildRegistryFromEnv() *provider.Registry {
 		})
 	}
 	if key := os.Getenv("GEMINI_API_KEY"); key != "" {
-		registry.Register(provider.NewGeminiProvider(key, "gemini-2.0-flash"), provider.ProviderMeta{
-			Name: "gemini", DefaultModel: "gemini-2.0-flash", RequiredEnvKey: "GEMINI_API_KEY", SupportsStream: true,
+		registry.Register(provider.NewGeminiProvider(key, "gemini-2.5-flash"), provider.ProviderMeta{
+			Name: "gemini", DefaultModel: "gemini-2.5-flash", RequiredEnvKey: "GEMINI_API_KEY", SupportsStream: true,
 		})
 	}
 	return registry

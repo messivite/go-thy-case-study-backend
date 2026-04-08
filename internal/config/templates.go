@@ -27,13 +27,13 @@ var BuiltinTemplates = map[string]ProviderTemplate{
 	"gemini": {
 		Name:           "gemini",
 		DisplayName:    "Google Gemini",
-		DefaultModel:   "gemini-2.0-flash",
-		Models:         []string{"gemini-2.0-flash", "gemini-2.5-pro", "gemini-2.5-flash"},
+		DefaultModel:   "gemini-2.5-flash",
+		Models:         []string{"gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"},
 		EnvKey:         "GEMINI_API_KEY",
 		SupportsStream: true,
 		BaseURL:        "https://generativelanguage.googleapis.com/v1beta",
 		AuthType:       "query-key",
-		Description:    "Google Gemini modelleri (2.0 Flash, 2.5 Pro/Flash)",
+		Description:    "Google Gemini modelleri (2.5 Flash / Pro / Flash-Lite; 2.0 yeni hesaplarda kapalı)",
 	},
 	"anthropic": {
 		Name:           "anthropic",

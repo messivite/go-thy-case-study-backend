@@ -18,6 +18,7 @@ func TestMapHTTPError(t *testing.T) {
 		{403, domain.ErrProviderAuthFailed, "openai"},
 		{429, domain.ErrProviderRateLimited, "gemini"},
 		{400, domain.ErrProviderBadRequest, "openai"},
+		{404, domain.ErrProviderBadRequest, "gemini"},
 		{500, domain.ErrProviderUnavailable, "openai"},
 		{502, domain.ErrProviderUnavailable, "openai"},
 		{503, domain.ErrProviderUnavailable, "gemini"},

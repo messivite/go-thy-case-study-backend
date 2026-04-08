@@ -23,6 +23,17 @@ func TestMemoryRepositorySessionLifecycle(t *testing.T) {
 	if got.UserID != "user-1" {
 		t.Fatalf("expected user-1, got %s", got.UserID)
 	}
+
+	if err := r.UpdateSessionLastLLM(ctx, session.ID.String(), "gemini", "gemini-2.5-flash"); err != nil {
+		t.Fatalf("update last llm: %v", err)
+	}
+	got, err = r.GetChatSessionByID(ctx, session.ID.String())
+	if err != nil {
+		t.Fatalf("get session after update: %v", err)
+	}
+	if got.LastProvider != "gemini" || got.LastModel != "gemini-2.5-flash" {
+		t.Fatalf("last llm: got provider=%q model=%q", got.LastProvider, got.LastModel)
+	}
 }
 
 func TestMemoryRepositoryMessages(t *testing.T) {

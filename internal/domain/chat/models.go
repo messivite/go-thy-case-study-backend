@@ -23,10 +23,12 @@ func (r Role) Valid() bool {
 }
 
 type ChatSession struct {
-	ID        uuid.UUID
-	UserID    string
-	Title     string
-	CreatedAt time.Time
+	ID           uuid.UUID
+	UserID       string
+	Title        string
+	CreatedAt    time.Time
+	LastProvider string
+	LastModel    string
 }
 
 type ChatMessage struct {
