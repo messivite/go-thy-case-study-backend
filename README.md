@@ -5,20 +5,27 @@
   <a href="https://pkg.go.dev/github.com/messivite/gosupabase">
     <img src="https://pkg.go.dev/badge/github.com/messivite/gosupabase.svg" alt="Go Reference: gosupabase" />
   </a>
-  <img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white" alt="Go Version" />
-  <img src="https://img.shields.io/badge/Supabase-JWT-3ECF8E?logo=supabase&logoColor=white" alt="Supabase JWT" />
-  <img src="https://img.shields.io/badge/JWKS-Supported-4C8BF5" alt="JWKS" />
-  <img src="https://img.shields.io/badge/Hot%20Reload-gosupabase%20dev-orange" alt="Hot Reload" />
+  <a href="https://go.dev/">
+    <img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white&style=for-the-badge" alt="Go Version" />
+  </a>
+  <a href="https://supabase.com/">
+    <img src="https://img.shields.io/badge/Supabase-Ready-3ECF8E?logo=supabase&logoColor=white&style=for-the-badge" alt="Supabase" />
+  </a>
+  <img src="https://img.shields.io/badge/JWT-HS256%20%7C%20ES256-orange?style=for-the-badge" alt="JWT" />
+  <img src="https://img.shields.io/badge/JWKS-Auto%20Fetch-2563eb?style=for-the-badge" alt="JWKS" />
+  <img src="https://img.shields.io/badge/Dev-gosupabase%20dev-16a34a?style=for-the-badge" alt="Hot Reload" />
   <a href="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/ci.yml">
-    <img src="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/ci.yml/badge.svg" alt="CI" />
+    <img src="https://img.shields.io/github/actions/workflow/status/messivite/go-thy-case-study-backend/ci.yml?branch=main&style=for-the-badge&label=CI" alt="CI" />
   </a>
   <a href="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/messivite/go-thy-case-study-backend/ci.yml?label=Tests" alt="Tests" />
+    <img src="https://img.shields.io/github/actions/workflow/status/messivite/go-thy-case-study-backend/ci.yml?branch=main&style=for-the-badge&label=Tests" alt="Tests" />
   </a>
   <a href="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/release.yml">
-    <img src="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/release.yml/badge.svg" alt="Release" />
+    <img src="https://img.shields.io/github/actions/workflow/status/messivite/go-thy-case-study-backend/release.yml?style=for-the-badge&label=Release" alt="Release" />
   </a>
-  <img src="https://img.shields.io/badge/Coverage-Tests%20Enabled-brightgreen" alt="Coverage" />
+  <a href="https://app.codecov.io/gh/messivite/go-thy-case-study-backend">
+    <img src="https://img.shields.io/codecov/c/github/messivite/go-thy-case-study-backend?style=for-the-badge&label=Coverage" alt="Coverage" />
+  </a>
   <a href="https://github.com/messivite/gosupabase/releases">
     <img src="https://img.shields.io/github/v/release/messivite/gosupabase?label=gosupabase%20release" alt="gosupabase release" />
   </a>
