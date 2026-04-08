@@ -62,36 +62,6 @@ Paket; YAML-first endpoint yönetimi, Supabase JWT doğrulaması ve role-based r
 - **Veritabanı:** Supabase Postgres (Auth tabloları + `public.profiles` + `public.user_roles` + RLS/policy)
 - **LLM Provider Yönetimi:** `providers.yaml` + `.env` ile ayrıştırılmış konfig, `thy-case-llm` CLI ile yönetim
 
-## DDD Katman Mimarisi (Faz 1)
-
-```
-┌─────────────────────────────────────────────────┐
-│                  HTTP Katmanı                    │
-│          internal/chat/handler.go                │
-│      (DTO dönüşümleri, SSE akışı)               │
-├─────────────────────────────────────────────────┤
-│              Application Katmanı                 │
-│       internal/application/chat/usecase.go       │
-│  (iş kuralları, orkestrasyon, finalize akışı)    │
-├─────────────────────────────────────────────────┤
-│               Domain Katmanı                     │
-│          internal/domain/chat/                   │
-│  models · provider interface · repository i/f    │
-│      errors · Role · StreamEvent · Request       │
-├─────────────────────────────────────────────────┤
-│           Infrastructure Katmanı                 │
-│  internal/provider/  (OpenAI, Gemini adapter)    │
-│  internal/repo/      (MemoryRepository)          │
-│  internal/config/    (providers.yaml loader)     │
-│  internal/auth/      (Supabase JWT adapter)      │
-└─────────────────────────────────────────────────┘
-```
-
-**Yeni bir LLM provider eklemek için:**
-1. `internal/provider/` altında yeni adapter dosyası oluştur (`domain.LLMProvider` interface'ini implemente et)
-2. `providers.yaml`'a provider bilgisini ekle (veya `thy-case-llm provider add` kullan)
-3. `cmd/api/main.go` içindeki `createProvider` switch'ine yeni case ekle
-
 ## Proje Yapısı
 
 ```
@@ -163,7 +133,7 @@ go run ./cmd/thy-case-llm help
 Global komut olarak kullanmak için:
 
 ```bash
-cd /Users/mustafaaksoy/Projects/thy-case-study-backend
+cd /Users/kullaniciAdiniz/Projects/thy-case-study-backend
 go install ./cmd/thy-case-llm
 ```
 
@@ -210,7 +180,7 @@ thy-case-llm provider remove gemini
 1) Binary'yi kurun:
 
 ```bash
-cd /Users/mustafaaksoy/Projects/thy-case-study-backend
+cd /Users/kullaniciAdiniz/Projects/thy-case-study-backend
 go install ./cmd/thy-case-llm
 ```
 
