@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/messivite/thy-case-study-backend/internal/httpx"
 )
 
 type AuthenticatedUser struct {
@@ -35,7 +37,7 @@ func AuthMiddleware(authService AuthService) func(next http.Handler) http.Handle
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user, err := authService.AuthenticateRequest(r)
 			if err != nil {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				httpx.Unauthorized(w)
 				return
 			}
 			next.ServeHTTP(w, r.WithContext(ContextWithAuthenticatedUser(r.Context(), user)))

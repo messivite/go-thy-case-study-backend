@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	usecase "github.com/example/thy-case-study-backend/internal/application/chat"
 	"github.com/example/thy-case-study-backend/internal/auth"
 	domain "github.com/example/thy-case-study-backend/internal/domain/chat"
+	"github.com/example/thy-case-study-backend/internal/httpx"
 )
 
 type Handler struct {
@@ -92,7 +94,7 @@ func (h *Handler) ListProviders(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.AuthenticatedUserFromContext(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpx.Unauthorized(w)
 		return
 	}
 	writeJSON(w, http.StatusOK, user)
@@ -101,13 +103,13 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.AuthenticatedUserFromContext(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpx.Unauthorized(w)
 		return
 	}
 
 	sessions, err := h.uc.ListSessions(r.Context(), user.UserID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAppError(w, err)
 		return
 	}
 	items := make([]chatListItemResponse, 0, len(sessions))
@@ -127,19 +129,19 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.AuthenticatedUserFromContext(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpx.Unauthorized(w)
 		return
 	}
 
 	var req createSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request payload", http.StatusBadRequest)
+		httpx.BadRequest(w, "Invalid request payload")
 		return
 	}
 
 	session, err := h.uc.CreateSession(r.Context(), user.UserID, req.Title)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAppError(w, err)
 		return
 	}
 
@@ -149,14 +151,14 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.AuthenticatedUserFromContext(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpx.Unauthorized(w)
 		return
 	}
 
 	sessionID := chi.URLParam(r, "sessionID")
 	messages, err := h.uc.GetSessionMessages(r.Context(), user.UserID, sessionID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAppError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, toAPIMessages(messages))
@@ -165,14 +167,14 @@ func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetChat(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.AuthenticatedUserFromContext(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpx.Unauthorized(w)
 		return
 	}
 
 	chatID := chi.URLParam(r, "chatID")
 	session, messages, err := h.uc.GetChat(r.Context(), user.UserID, chatID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAppError(w, err)
 		return
 	}
 
@@ -187,20 +189,20 @@ func (h *Handler) GetChat(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) PostMessage(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.AuthenticatedUserFromContext(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpx.Unauthorized(w)
 		return
 	}
 
 	chatID := chi.URLParam(r, "chatID")
 	var req postMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request payload", http.StatusBadRequest)
+		httpx.BadRequest(w, "Invalid request payload")
 		return
 	}
 
 	assistantMsg, usage, err := h.uc.SendMessage(r.Context(), user.UserID, chatID, req.Provider, req.Model, req.Content, toDomainMessages(req.Messages))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAppError(w, err)
 		return
 	}
 
@@ -213,20 +215,20 @@ func (h *Handler) PostMessage(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.AuthenticatedUserFromContext(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpx.Unauthorized(w)
 		return
 	}
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		httpx.Internal(w)
 		return
 	}
 
 	chatID := chi.URLParam(r, "chatID")
 	var req postMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request payload", http.StatusBadRequest)
+		httpx.BadRequest(w, "Invalid request payload")
 		return
 	}
 
@@ -239,7 +241,7 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 
 	events, usage, finalize, err := h.uc.StreamMessage(streamCtx, user.UserID, chatID, req.Provider, req.Model, req.Content, toDomainMessages(req.Messages))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAppError(w, err)
 		return
 	}
 
@@ -325,4 +327,17 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(payload)
+}
+
+func writeAppError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, domain.ErrUnauthorized):
+		httpx.Forbidden(w)
+	case errors.Is(err, domain.ErrMissingContent), errors.Is(err, domain.ErrInvalidRole):
+		httpx.BadRequest(w, err.Error())
+	case errors.Is(err, domain.ErrSessionNotFound):
+		httpx.NotFound(w, err.Error())
+	default:
+		httpx.Internal(w)
+	}
 }
