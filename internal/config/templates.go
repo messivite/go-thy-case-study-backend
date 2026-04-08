@@ -1,0 +1,67 @@
+package config
+
+type ProviderTemplate struct {
+	Name           string   `json:"name"`
+	DisplayName    string   `json:"displayName"`
+	DefaultModel   string   `json:"defaultModel"`
+	Models         []string `json:"models"`
+	EnvKey         string   `json:"envKey"`
+	SupportsStream bool     `json:"supportsStream"`
+	BaseURL        string   `json:"baseURL"`
+	AuthType       string   `json:"authType"`
+	Description    string   `json:"description"`
+}
+
+var BuiltinTemplates = map[string]ProviderTemplate{
+	"openai": {
+		Name:           "openai",
+		DisplayName:    "OpenAI",
+		DefaultModel:   "gpt-4o",
+		Models:         []string{"gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "o4-mini"},
+		EnvKey:         "OPENAI_API_KEY",
+		SupportsStream: true,
+		BaseURL:        "https://api.openai.com/v1",
+		AuthType:       "bearer",
+		Description:    "OpenAI ChatGPT modelleri (GPT-4o, GPT-4.1 serisi)",
+	},
+	"gemini": {
+		Name:           "gemini",
+		DisplayName:    "Google Gemini",
+		DefaultModel:   "gemini-2.0-flash",
+		Models:         []string{"gemini-2.0-flash", "gemini-2.5-pro", "gemini-2.5-flash"},
+		EnvKey:         "GEMINI_API_KEY",
+		SupportsStream: true,
+		BaseURL:        "https://generativelanguage.googleapis.com/v1beta",
+		AuthType:       "query-key",
+		Description:    "Google Gemini modelleri (2.0 Flash, 2.5 Pro/Flash)",
+	},
+	"anthropic": {
+		Name:           "anthropic",
+		DisplayName:    "Anthropic Claude",
+		DefaultModel:   "claude-sonnet-4-20250514",
+		Models:         []string{"claude-sonnet-4-20250514", "claude-4-opus-20250514", "claude-3.5-haiku-20241022"},
+		EnvKey:         "ANTHROPIC_API_KEY",
+		SupportsStream: true,
+		BaseURL:        "https://api.anthropic.com/v1",
+		AuthType:       "x-api-key",
+		Description:    "Anthropic Claude modelleri (Claude 4 Sonnet/Opus, 3.5 Haiku)",
+	},
+}
+
+func ListTemplateNames() []string {
+	names := make([]string, 0, len(BuiltinTemplates))
+	for name := range BuiltinTemplates {
+		names = append(names, name)
+	}
+	return names
+}
+
+func GetTemplate(name string) (ProviderTemplate, bool) {
+	t, ok := BuiltinTemplates[name]
+	return t, ok
+}
+
+func IsKnownTemplate(name string) bool {
+	_, ok := BuiltinTemplates[name]
+	return ok
+}

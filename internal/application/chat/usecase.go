@@ -6,6 +6,7 @@ import (
 	"time"
 
 	domain "github.com/example/thy-case-study-backend/internal/domain/chat"
+	"github.com/example/thy-case-study-backend/internal/observability"
 	"github.com/example/thy-case-study-backend/internal/provider"
 )
 
@@ -92,26 +93,37 @@ func (uc *UseCase) SendMessage(
 		return domain.ChatMessage{}, nil, domain.ErrUnauthorized
 	}
 
-	if _, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, content); err != nil {
-		return domain.ChatMessage{}, nil, err
-	}
-
 	history, err := uc.repo.GetMessagesBySession(ctx, chatID)
 	if err != nil {
 		return domain.ChatMessage{}, nil, err
 	}
+	reqMessages := append(history, domain.ChatMessage{
+		Role:    domain.RoleUser,
+		Content: content,
+	})
 
 	p, err := uc.registry.Get(providerName)
 	if err != nil {
 		return domain.ChatMessage{}, nil, err
 	}
 
+	observability.LLMRequest(providerName, model, userID, chatID)
+	start := time.Now()
+
 	resp, err := p.Complete(ctx, domain.ProviderRequest{
 		Provider: providerName,
 		Model:    model,
-		Messages: history,
+		Messages: reqMessages,
 	})
 	if err != nil {
+		observability.LLMError(providerName, model, err)
+		return domain.ChatMessage{}, nil, err
+	}
+
+	usage := domain.NormalizeUsage(resp.Usage)
+	observability.LLMResponse(providerName, usage.Model, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens, time.Since(start).Milliseconds())
+
+	if _, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, content); err != nil {
 		return domain.ChatMessage{}, nil, err
 	}
 
@@ -120,11 +132,7 @@ func (uc *UseCase) SendMessage(
 		return domain.ChatMessage{}, nil, err
 	}
 
-	usage := map[string]any{
-		"provider": providerName,
-		"model":    model,
-	}
-	return assistant, usage, nil
+	return assistant, resp.Usage, nil
 }
 
 func (uc *UseCase) StreamMessage(
@@ -153,26 +161,33 @@ func (uc *UseCase) StreamMessage(
 		return nil, nil, nil, domain.ErrUnauthorized
 	}
 
-	if _, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, prompt); err != nil {
-		return nil, nil, nil, err
-	}
-
 	history, err := uc.repo.GetMessagesBySession(ctx, chatID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	reqMessages := append(history, domain.ChatMessage{
+		Role:    domain.RoleUser,
+		Content: prompt,
+	})
 
 	p, err := uc.registry.Get(providerName)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
+	observability.LLMRequest(providerName, model, userID, chatID)
+
 	events, err := p.Stream(ctx, domain.ProviderRequest{
 		Provider: providerName,
 		Model:    model,
-		Messages: history,
+		Messages: reqMessages,
 	})
 	if err != nil {
+		observability.LLMError(providerName, model, err)
+		return nil, nil, nil, err
+	}
+
+	if _, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, prompt); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -182,6 +197,12 @@ func (uc *UseCase) StreamMessage(
 	}
 
 	finalize := func(assistantContent string) (domain.ChatMessage, error) {
+		observability.Info("llm.stream.complete", map[string]any{
+			"provider":   providerName,
+			"model":      model,
+			"session_id": chatID,
+			"chars":      len(assistantContent),
+		})
 		return uc.repo.SaveMessage(ctx, chatID, "", domain.RoleAssistant, assistantContent)
 	}
 

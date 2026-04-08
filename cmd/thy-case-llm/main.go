@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/example/thy-case-study-backend/internal/config"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 func main() {
 	loadDotEnv()
@@ -28,6 +29,12 @@ func main() {
 			os.Exit(1)
 		}
 		handleProvider(args[1], args[2:])
+	case "templates":
+		if len(args) < 2 {
+			printTemplatesUsage()
+			os.Exit(1)
+		}
+		handleTemplates(args[1], args[2:])
 	case "doctor":
 		cmdDoctor()
 	case "version":
@@ -41,6 +48,10 @@ func main() {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// provider subcommands
+// ---------------------------------------------------------------------------
+
 func handleProvider(subcmd string, args []string) {
 	switch subcmd {
 	case "add":
@@ -53,6 +64,12 @@ func handleProvider(subcmd string, args []string) {
 		cmdProviderSetDefault(args)
 	case "validate":
 		cmdProviderValidate()
+	case "templates":
+		if len(args) < 1 {
+			printTemplatesUsage()
+			os.Exit(1)
+		}
+		handleTemplates(args[0], args[1:])
 	case "doctor":
 		cmdDoctor()
 	default:
@@ -66,9 +83,9 @@ func cmdProviderAdd(args []string) {
 	cfgPath := configPath()
 	cfg := loadOrCreateConfig(cfgPath)
 
-	var name, model, envKey string
+	var name, model, envKey, template string
+	var setDefault bool
 
-	// Parse flags if provided
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--name":
@@ -86,15 +103,52 @@ func cmdProviderAdd(args []string) {
 				envKey = args[i+1]
 				i++
 			}
+		case "--template":
+			if i+1 < len(args) {
+				template = args[i+1]
+				i++
+			}
+		case "--set-default":
+			setDefault = true
 		}
 	}
 
 	reader := bufio.NewReader(os.Stdin)
 
-	if name == "" {
-		fmt.Println("Desteklenen provider'lar: openai, gemini")
-		fmt.Print("Provider adı: ")
-		name = readLine(reader)
+	if template != "" {
+		tpl, ok := config.GetTemplate(template)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Bilinmeyen template: %q\n", template)
+			fmt.Fprintf(os.Stderr, "Mevcut template'ler: %s\n", strings.Join(sortedTemplateNames(), ", "))
+			os.Exit(1)
+		}
+		if name == "" {
+			name = tpl.Name
+		}
+		if model == "" {
+			model = tpl.DefaultModel
+		}
+		if envKey == "" {
+			envKey = tpl.EnvKey
+		}
+		fmt.Printf("Template: %s (%s)\n", tpl.DisplayName, tpl.Description)
+	} else {
+		if name == "" {
+			fmt.Printf("Mevcut template'ler: %s\n", strings.Join(sortedTemplateNames(), ", "))
+			fmt.Print("Provider adı (veya template adı): ")
+			name = readLine(reader)
+		}
+
+		if tpl, ok := config.GetTemplate(name); ok {
+			template = name
+			if model == "" {
+				model = tpl.DefaultModel
+			}
+			if envKey == "" {
+				envKey = tpl.EnvKey
+			}
+			fmt.Printf("Template bulundu: %s\n", tpl.DisplayName)
+		}
 	}
 
 	if model == "" {
@@ -108,7 +162,7 @@ func cmdProviderAdd(args []string) {
 
 	if envKey == "" {
 		defaultEnvKey := suggestEnvKey(name)
-		fmt.Printf("Env key (API anahtarı için) [%s]: ", defaultEnvKey)
+		fmt.Printf("Env key [%s]: ", defaultEnvKey)
 		envKey = readLine(reader)
 		if envKey == "" {
 			envKey = defaultEnvKey
@@ -126,6 +180,10 @@ func cmdProviderAdd(args []string) {
 		os.Exit(1)
 	}
 
+	if setDefault {
+		cfg.Default = name
+	}
+
 	if err := config.SaveProvidersConfig(cfgPath, cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Config kaydetme hatası: %v\n", err)
 		os.Exit(1)
@@ -134,6 +192,15 @@ func cmdProviderAdd(args []string) {
 	fmt.Printf("✓ Provider %q eklendi (model: %s, env: %s)\n", name, model, envKey)
 	if cfg.Default == name {
 		fmt.Printf("  → Varsayılan provider olarak ayarlandı\n")
+	}
+
+	if !config.IsKnownTemplate(name) {
+		fmt.Println()
+		fmt.Println("  ⚠ Bu provider için hazır adapter bulunamadı.")
+		fmt.Println("  Custom adapter eklemek için:")
+		fmt.Println("    1) internal/provider/<name>.go dosyası oluşturun")
+		fmt.Println("    2) domain.LLMProvider interface'ini implemente edin")
+		fmt.Println("    3) cmd/api/main.go createProvider() switch'ine ekleyin")
 	}
 }
 
@@ -151,8 +218,8 @@ func cmdProviderList() {
 	}
 
 	fmt.Printf("Varsayılan: %s\n\n", cfg.Default)
-	fmt.Printf("%-15s %-20s %-25s %s\n", "ADI", "MODEL", "ENV KEY", "DURUM")
-	fmt.Println(strings.Repeat("─", 70))
+	fmt.Printf("%-15s %-20s %-25s %-12s %s\n", "ADI", "MODEL", "ENV KEY", "TEMPLATE", "DURUM")
+	fmt.Println(strings.Repeat("─", 85))
 
 	for _, p := range cfg.Providers {
 		status := "✗ env boş"
@@ -163,7 +230,11 @@ func cmdProviderList() {
 		if p.Name == cfg.Default {
 			marker = "→ "
 		}
-		fmt.Printf("%s%-13s %-20s %-25s %s\n", marker, p.Name, p.Model, p.EnvKey, status)
+		tplTag := "custom"
+		if config.IsKnownTemplate(p.Name) {
+			tplTag = "built-in"
+		}
+		fmt.Printf("%s%-13s %-20s %-25s %-12s %s\n", marker, p.Name, p.Model, p.EnvKey, tplTag, status)
 	}
 }
 
@@ -240,6 +311,78 @@ func cmdProviderValidate() {
 	os.Exit(1)
 }
 
+// ---------------------------------------------------------------------------
+// templates subcommands
+// ---------------------------------------------------------------------------
+
+func handleTemplates(subcmd string, args []string) {
+	switch subcmd {
+	case "list":
+		cmdTemplatesList()
+	case "show":
+		if len(args) < 1 {
+			fmt.Fprintln(os.Stderr, "Kullanım: thy-case-llm templates show <name>")
+			os.Exit(1)
+		}
+		cmdTemplatesShow(args[0])
+	default:
+		fmt.Fprintf(os.Stderr, "unknown templates subcommand: %s\n", subcmd)
+		printTemplatesUsage()
+		os.Exit(1)
+	}
+}
+
+func cmdTemplatesList() {
+	names := sortedTemplateNames()
+
+	fmt.Println("Mevcut Provider Template'leri")
+	fmt.Println(strings.Repeat("─", 70))
+	fmt.Printf("%-15s %-20s %-20s %s\n", "ADI", "VARSAYILAN MODEL", "STREAM", "AÇIKLAMA")
+	fmt.Println(strings.Repeat("─", 70))
+
+	for _, name := range names {
+		tpl := config.BuiltinTemplates[name]
+		stream := "✓"
+		if !tpl.SupportsStream {
+			stream = "✗"
+		}
+		fmt.Printf("%-15s %-20s %-20s %s\n", tpl.Name, tpl.DefaultModel, stream, tpl.Description)
+	}
+
+	fmt.Println()
+	fmt.Println("Kullanım: thy-case-llm provider add --template <name>")
+	fmt.Println("Detay:    thy-case-llm templates show <name>")
+}
+
+func cmdTemplatesShow(name string) {
+	tpl, ok := config.GetTemplate(name)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "Template bulunamadı: %q\n", name)
+		fmt.Fprintf(os.Stderr, "Mevcut: %s\n", strings.Join(sortedTemplateNames(), ", "))
+		os.Exit(1)
+	}
+
+	fmt.Printf("Template: %s\n", tpl.DisplayName)
+	fmt.Println(strings.Repeat("─", 50))
+	fmt.Printf("  Ad:            %s\n", tpl.Name)
+	fmt.Printf("  Açıklama:      %s\n", tpl.Description)
+	fmt.Printf("  Base URL:      %s\n", tpl.BaseURL)
+	fmt.Printf("  Auth tipi:     %s\n", tpl.AuthType)
+	fmt.Printf("  Env key:       %s\n", tpl.EnvKey)
+	fmt.Printf("  Varsayılan:    %s\n", tpl.DefaultModel)
+	fmt.Printf("  Stream:        %v\n", tpl.SupportsStream)
+	fmt.Printf("  Modeller:      %s\n", strings.Join(tpl.Models, ", "))
+
+	fmt.Println()
+	fmt.Printf("Hızlı ekleme:\n")
+	fmt.Printf("  thy-case-llm provider add --template %s\n", tpl.Name)
+	fmt.Printf("  thy-case-llm provider add --template %s --model %s --set-default\n", tpl.Name, tpl.DefaultModel)
+}
+
+// ---------------------------------------------------------------------------
+// doctor
+// ---------------------------------------------------------------------------
+
 func cmdDoctor() {
 	cfgPath := configPath()
 	failed := false
@@ -276,17 +419,21 @@ func cmdDoctor() {
 
 	for _, p := range cfg.Providers {
 		label := fmt.Sprintf("provider=%s model=%s", p.Name, p.Model)
+		tplTag := "custom"
+		if config.IsKnownTemplate(p.Name) {
+			tplTag = "built-in"
+		}
 		if p.EnvKey == "" {
-			fmt.Printf("✗ %s -> env_key eksik\n", label)
+			fmt.Printf("✗ %s [%s] -> env_key eksik\n", label, tplTag)
 			failed = true
 			continue
 		}
 		if os.Getenv(p.EnvKey) == "" {
-			fmt.Printf("✗ %s -> env boş (%s)\n", label, p.EnvKey)
+			fmt.Printf("✗ %s [%s] -> env boş (%s)\n", label, tplTag, p.EnvKey)
 			failed = true
 			continue
 		}
-		fmt.Printf("✓ %s -> env hazır (%s)\n", label, p.EnvKey)
+		fmt.Printf("✓ %s [%s] -> env hazır (%s)\n", label, tplTag, p.EnvKey)
 	}
 
 	if _, err := os.Stat("api.yaml"); err != nil {
@@ -301,12 +448,18 @@ func cmdDoctor() {
 		fmt.Println("✓ .env bulundu")
 	}
 
+	fmt.Printf("✓ mevcut template sayısı: %d (%s)\n", len(config.BuiltinTemplates), strings.Join(sortedTemplateNames(), ", "))
+
 	if failed {
 		fmt.Println("\nSonuç: bazı kontroller başarısız.")
 		os.Exit(1)
 	}
 	fmt.Println("\nSonuç: tüm kritik kontroller başarılı.")
 }
+
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
 
 func loadOrCreateConfig(path string) *config.ProvidersConfig {
 	cfg, err := config.LoadProvidersConfig(path)
@@ -329,58 +482,23 @@ func readLine(reader *bufio.Reader) string {
 }
 
 func suggestModel(providerName string) string {
-	switch providerName {
-	case "openai":
-		return "gpt-4o"
-	case "gemini":
-		return "gemini-2.0-flash"
-	default:
-		return ""
+	if tpl, ok := config.GetTemplate(providerName); ok {
+		return tpl.DefaultModel
 	}
+	return ""
 }
 
 func suggestEnvKey(providerName string) string {
-	switch providerName {
-	case "openai":
-		return "OPENAI_API_KEY"
-	case "gemini":
-		return "GEMINI_API_KEY"
-	default:
-		return strings.ToUpper(providerName) + "_API_KEY"
+	if tpl, ok := config.GetTemplate(providerName); ok {
+		return tpl.EnvKey
 	}
+	return strings.ToUpper(providerName) + "_API_KEY"
 }
 
-func printUsage() {
-	fmt.Println(`thy-case-llm — LLM Provider Yönetim Aracı
-
-Kullanım:
-  thy-case-llm <komut> [argümanlar]
-
-Komutlar:
-  provider add                  Yeni bir LLM provider ekle
-  provider list                 Kayıtlı provider'ları listele
-  provider remove <name>        Provider'ı kaldır
-  provider set-default <name>   Varsayılan provider'ı değiştir
-  provider validate             Provider yapılandırmasını doğrula
-  doctor                        Hızlı sistem sağlık kontrolü
-  version                       Sürüm bilgisi
-  help                          Bu yardım mesajı`)
-}
-
-func printProviderUsage() {
-	fmt.Println(`Kullanım:
-  thy-case-llm provider <alt-komut> [argümanlar]
-
-Alt komutlar:
-  add                           Yeni provider ekle (interaktif veya flag ile)
-    --name <name>               Provider adı (openai, gemini, ...)
-    --model <model>             Model adı (gpt-4o, gemini-2.0-flash, ...)
-    --env-key <key>             API key ortam değişkeni adı
-  list                          Kayıtlı provider'ları listele
-  remove <name>                 Provider'ı kaldır
-  set-default <name>            Varsayılan provider'ı değiştir
-  validate                      Tüm provider'ları doğrula
-  doctor                        Provider + env + config kontrolü`)
+func sortedTemplateNames() []string {
+	names := config.ListTemplateNames()
+	sort.Strings(names)
+	return names
 }
 
 func loadDotEnv() {
@@ -412,9 +530,60 @@ func loadDotEnv() {
 			continue
 		}
 
-		// Keep explicitly exported shell values as source of truth.
 		if os.Getenv(key) == "" {
 			_ = os.Setenv(key, val)
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// usage text
+// ---------------------------------------------------------------------------
+
+func printUsage() {
+	fmt.Println(`thy-case-llm — LLM Provider Yönetim Aracı
+
+Kullanım:
+  thy-case-llm <komut> [argümanlar]
+
+Komutlar:
+  provider add                  Yeni bir LLM provider ekle
+  provider list                 Kayıtlı provider'ları listele
+  provider remove <name>        Provider'ı kaldır
+  provider set-default <name>   Varsayılan provider'ı değiştir
+  provider validate             Provider yapılandırmasını doğrula
+  templates list                Mevcut provider template'lerini listele
+  templates show <name>         Template detayını göster
+  doctor                        Hızlı sistem sağlık kontrolü
+  version                       Sürüm bilgisi
+  help                          Bu yardım mesajı`)
+}
+
+func printProviderUsage() {
+	fmt.Println(`Kullanım:
+  thy-case-llm provider <alt-komut> [argümanlar]
+
+Alt komutlar:
+  add                           Yeni provider ekle
+    --template <name>           Hazır template kullan (openai, gemini, anthropic)
+    --name <name>               Provider adı
+    --model <model>             Model adı
+    --env-key <key>             API key ortam değişkeni adı
+    --set-default               Varsayılan olarak ayarla
+  list                          Kayıtlı provider'ları listele
+  remove <name>                 Provider'ı kaldır
+  set-default <name>            Varsayılan provider'ı değiştir
+  validate                      Tüm provider'ları doğrula
+  templates list                Mevcut template'leri listele
+  templates show <name>         Template detayını göster
+  doctor                        Provider + env + config kontrolü`)
+}
+
+func printTemplatesUsage() {
+	fmt.Println(`Kullanım:
+  thy-case-llm templates <alt-komut>
+
+Alt komutlar:
+  list                          Mevcut provider template'lerini listele
+  show <name>                   Template detayını göster`)
 }
