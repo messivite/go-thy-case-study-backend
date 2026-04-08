@@ -23,6 +23,7 @@ coverage.out
 
 # Logs
 *.log
+logs/
 
 # Supabase local/temp artifacts
 supabase/.temp/

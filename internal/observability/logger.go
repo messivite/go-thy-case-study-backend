@@ -3,6 +3,8 @@ package observability
 import (
 	"encoding/json"
 	"log"
+	"os"
+	"sync"
 	"time"
 )
 
@@ -12,6 +14,39 @@ type LogEntry struct {
 	Event     string         `json:"event"`
 	Fields    map[string]any `json:"fields,omitempty"`
 	Error     string         `json:"error,omitempty"`
+}
+
+var sinkMu sync.Mutex
+var sinkFile *os.File
+
+// EnableFileLog appends her yapılandırılmış log satırını JSON Lines olarak path dosyasına yazar.
+// Boş path: dosya sink’i kapatır. Process çıkarken CloseFileLog çağır.
+func EnableFileLog(path string) error {
+	sinkMu.Lock()
+	defer sinkMu.Unlock()
+	if sinkFile != nil {
+		_ = sinkFile.Close()
+		sinkFile = nil
+	}
+	if path == "" {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	sinkFile = f
+	return nil
+}
+
+// CloseFileLog dosya sink’ini kapatır (graceful shutdown).
+func CloseFileLog() {
+	sinkMu.Lock()
+	defer sinkMu.Unlock()
+	if sinkFile != nil {
+		_ = sinkFile.Close()
+		sinkFile = nil
+	}
 }
 
 func Info(event string, fields map[string]any) {
@@ -65,6 +100,17 @@ func emit(level, event string, fields map[string]any, errMsg string) {
 		Fields:    fields,
 		Error:     errMsg,
 	}
-	data, _ := json.Marshal(entry)
-	log.Println(string(data))
+	data, err := json.Marshal(entry)
+	if err != nil {
+		log.Printf("observability: marshal: %v", err)
+		return
+	}
+	line := append(data, '\n')
+	log.Print(string(data))
+
+	sinkMu.Lock()
+	if sinkFile != nil {
+		_, _ = sinkFile.Write(line)
+	}
+	sinkMu.Unlock()
 }

@@ -67,6 +67,8 @@ type chatDetailResponse struct {
 type chatListItemResponse struct {
 	ID                 string `json:"id"`
 	Title              string `json:"title"`
+	Provider           string `json:"provider"`
+	Model              string `json:"model"`
 	CreatedAt          string `json:"createdAt"`
 	UpdatedAt          string `json:"updatedAt"`
 	LastMessagePreview string `json:"lastMessagePreview"`
@@ -123,9 +125,12 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	items := make([]chatListItemResponse, 0, len(sessions))
 	for _, s := range sessions {
 		lastPreview, updatedAt := h.uc.GetSessionSummary(r.Context(), s.ID.String())
+		lp, lm := sessionLLMSummary(s)
 		items = append(items, chatListItemResponse{
 			ID:                 s.ID.String(),
 			Title:              s.Title,
+			Provider:           lp,
+			Model:              lm,
 			CreatedAt:          s.CreatedAt.Format(timeFormat),
 			UpdatedAt:          updatedAt.Format(timeFormat),
 			LastMessagePreview: lastPreview,
@@ -361,6 +366,15 @@ func lastAssistantLLMFromMessages(msgs []domain.ChatMessage) (provider, model st
 		}
 	}
 	return "", ""
+}
+
+// sessionLLMSummary: son LLM turu (last_*) yoksa oturum default’ları (default_*).
+func sessionLLMSummary(s domain.ChatSession) (provider, model string) {
+	p, m := s.LastProvider, s.LastModel
+	if p == "" && m == "" {
+		p, m = s.DefaultProvider, s.DefaultModel
+	}
+	return p, m
 }
 
 func writeSSE(w http.ResponseWriter, payload any) error {
