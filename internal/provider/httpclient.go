@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	domain "github.com/example/thy-case-study-backend/internal/domain/chat"
-	"github.com/example/thy-case-study-backend/internal/observability"
+	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
+	"github.com/messivite/go-thy-case-study-backend/internal/observability"
 )
 
 type ClientConfig struct {

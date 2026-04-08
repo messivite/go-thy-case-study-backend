@@ -6,14 +6,14 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/example/thy-case-study-backend/internal/app"
-	usecase "github.com/example/thy-case-study-backend/internal/application/chat"
-	"github.com/example/thy-case-study-backend/internal/auth"
-	"github.com/example/thy-case-study-backend/internal/chat"
-	"github.com/example/thy-case-study-backend/internal/config"
-	domain "github.com/example/thy-case-study-backend/internal/domain/chat"
-	"github.com/example/thy-case-study-backend/internal/provider"
-	"github.com/example/thy-case-study-backend/internal/repo"
+	"github.com/messivite/go-thy-case-study-backend/internal/app"
+	usecase "github.com/messivite/go-thy-case-study-backend/internal/application/chat"
+	"github.com/messivite/go-thy-case-study-backend/internal/auth"
+	"github.com/messivite/go-thy-case-study-backend/internal/chat"
+	"github.com/messivite/go-thy-case-study-backend/internal/config"
+	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
+	"github.com/messivite/go-thy-case-study-backend/internal/provider"
+	"github.com/messivite/go-thy-case-study-backend/internal/repo"
 )
 
 func main() {

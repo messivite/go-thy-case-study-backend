@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	domain "github.com/example/thy-case-study-backend/internal/domain/chat"
-	"github.com/example/thy-case-study-backend/internal/observability"
-	"github.com/example/thy-case-study-backend/internal/provider"
+	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
+	"github.com/messivite/go-thy-case-study-backend/internal/observability"
+	"github.com/messivite/go-thy-case-study-backend/internal/provider"
 )
 
 type StreamFinalize func(assistantContent string) (domain.ChatMessage, error)

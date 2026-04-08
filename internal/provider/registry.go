@@ -3,7 +3,7 @@ package provider
 import (
 	"fmt"
 
-	domain "github.com/example/thy-case-study-backend/internal/domain/chat"
+	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
 )
 
 type ProviderMeta struct {

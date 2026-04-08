@@ -3,7 +3,7 @@ package provider
 import (
 	"strings"
 
-	domain "github.com/example/thy-case-study-backend/internal/domain/chat"
+	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
 )
 
 func lastUserContent(messages []domain.ChatMessage) string {
