@@ -1,0 +1,843 @@
+{
+  "components": {
+    "parameters": {
+      "chatID": {
+        "description": "Sohbet oturum UUID'si",
+        "in": "path",
+        "name": "chatID",
+        "required": true,
+        "schema": {
+          "example": "71d4acc8-deb2-401c-a293-337c151b9ac1",
+          "format": "uuid",
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "content": {
+          "application/json": {
+            "example": {
+              "error": {
+                "code": "bad_request",
+                "message": "Invalid request payload"
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        },
+        "description": "Gecersiz istek"
+      },
+      "NotFound": {
+        "content": {
+          "application/json": {
+            "example": {
+              "error": {
+                "code": "not_found",
+                "message": "session not found"
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        },
+        "description": "Kaynak bulunamadi"
+      },
+      "ProviderError": {
+        "content": {
+          "application/json": {
+            "examples": {
+              "authFailed": {
+                "summary": "Provider auth hatasi",
+                "value": {
+                  "error": {
+                    "code": "provider_auth_failed",
+                    "message": "Provider authentication failed"
+                  }
+                }
+              },
+              "rateLimited": {
+                "summary": "Provider rate limit",
+                "value": {
+                  "error": {
+                    "code": "provider_rate_limited",
+                    "message": "Provider rate limit exceeded"
+                  }
+                }
+              },
+              "unavailable": {
+                "summary": "Provider erisilemez",
+                "value": {
+                  "error": {
+                    "code": "provider_unavailable",
+                    "message": "Provider temporarily unavailable"
+                  }
+                }
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        },
+        "description": "LLM provider hatasi"
+      },
+      "ProviderTimeout": {
+        "content": {
+          "application/json": {
+            "example": {
+              "error": {
+                "code": "provider_timeout",
+                "message": "Provider request timed out"
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        },
+        "description": "LLM provider zaman asimi"
+      },
+      "QuotaExceeded": {
+        "content": {
+          "application/json": {
+            "examples": {
+              "daily": {
+                "summary": "Gunluk kota asimi",
+                "value": {
+                  "error": {
+                    "code": "llm_quota_daily_exceeded",
+                    "message": "Daily token quota exceeded"
+                  }
+                }
+              },
+              "weekly": {
+                "summary": "Haftalik kota asimi",
+                "value": {
+                  "error": {
+                    "code": "llm_quota_weekly_exceeded",
+                    "message": "Weekly token quota exceeded"
+                  }
+                }
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        },
+        "description": "Token kotasi asildi"
+      },
+      "Unauthorized": {
+        "content": {
+          "application/json": {
+            "example": {
+              "error": {
+                "code": "unauthorized",
+                "message": "Unauthorized"
+              }
+            },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        },
+        "description": "Kimlik dogrulama gerekli"
+      }
+    },
+    "schemas": {
+      "AssistantResponse": {
+        "properties": {
+          "assistantMessage": {
+            "$ref": "#/components/schemas/ChatMessage"
+          },
+          "usage": {
+            "additionalProperties": true,
+            "description": "Provider'dan donen token kullanim bilgisi",
+            "properties": {
+              "completion_tokens": {
+                "type": "integer"
+              },
+              "model": {
+                "type": "string"
+              },
+              "prompt_tokens": {
+                "type": "integer"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "total_tokens": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "assistantMessage"
+        ],
+        "type": "object"
+      },
+      "AuthenticatedUser": {
+        "properties": {
+          "Email": {
+            "format": "email",
+            "type": "string"
+          },
+          "Role": {
+            "type": "string"
+          },
+          "UserID": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "UserID",
+          "Email",
+          "Role"
+        ],
+        "type": "object"
+      },
+      "ChatDetail": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "type": "array"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "provider",
+          "model",
+          "messages"
+        ],
+        "type": "object"
+      },
+      "ChatListItem": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lastMessagePreview": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "provider",
+          "model",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "ChatMessage": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "model": {
+            "description": "Asistan mesajlarinda model bilgisi",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Asistan mesajlarinda provider bilgisi",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant",
+              "system"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "type": "object"
+      },
+      "CreateSessionRequest": {
+        "properties": {
+          "model": {
+            "description": "Opsiyonel model override",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Opsiyonel provider override",
+            "type": "string"
+          },
+          "title": {
+            "description": "Sohbet basligi",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreateSessionResponse": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "model"
+        ],
+        "type": "object"
+      },
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "description": "Makine okunur hata kodu",
+            "type": "string"
+          },
+          "message": {
+            "description": "Insana yonelik hata mesaji",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "ErrorEnvelope": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "ListProvidersResponse": {
+        "properties": {
+          "default": {
+            "description": "Varsayilan provider adi",
+            "type": "string"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "default",
+          "providers"
+        ],
+        "type": "object"
+      },
+      "PostMessageRequest": {
+        "properties": {
+          "content": {
+            "description": "Tek mesaj icerigi",
+            "type": "string"
+          },
+          "messages": {
+            "description": "Alternatif mesaj gecmisi formati",
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "type": "array"
+          },
+          "model": {
+            "description": "Opsiyonel model override",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Opsiyonel provider override",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ProviderInfo": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "model": {
+            "description": "Varsayilan model",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "model",
+          "enabled"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "description": "Supabase access token",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "contact": {
+      "name": "Mustafa Aksoy",
+      "url": "https://github.com/messivite/go-thy-case-study-backend"
+    },
+    "description": "LLM sohbet backend servisi.\nSupabase tabanli kimlik dogrulama, coklu LLM provider destegi,\ntoken kota yonetimi ve etklesim audit loglama icerir.\n",
+    "title": "THY Case Study Backend API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/chats": {
+      "get": {
+        "description": "Kullanicinin tum sohbet oturumlarini listeler.",
+        "operationId": "listSessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChatListItem"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Sohbet listesi"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "Sohbet listesi",
+        "tags": [
+          "chats"
+        ]
+      },
+      "post": {
+        "description": "Yeni bir chat session olusturur. Opsiyonel olarak provider\nve model belirtilebilir; belirtilmezse providers.yaml\nvarsayilanlari kullanilir.\n",
+        "operationId": "createSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "model": "gpt-4.1-mini",
+                "provider": "openai",
+                "title": "Test sohbet"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "id": "71d4acc8-deb2-401c-a293-337c151b9ac1",
+                  "model": "gpt-4.1-mini",
+                  "provider": "openai"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSessionResponse"
+                }
+              }
+            },
+            "description": "Oturum olusturuldu"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "Yeni sohbet oturumu olustur",
+        "tags": [
+          "chats"
+        ]
+      }
+    },
+    "/chats/{chatID}": {
+      "get": {
+        "description": "Oturum bilgisi ve tum mesajlari doner.",
+        "operationId": "getChat",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/chatID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatDetail"
+                }
+              }
+            },
+            "description": "Sohbet detayi"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "summary": "Sohbet detayi",
+        "tags": [
+          "chats"
+        ]
+      }
+    },
+    "/chats/{chatID}/messages": {
+      "post": {
+        "description": "Kullanici mesajini LLM'e gonderir ve yaniti senkron doner.\nOpsiyonel provider/model override destekler.\n",
+        "operationId": "postMessage",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/chatID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "simple": {
+                  "summary": "Tek mesaj",
+                  "value": {
+                    "content": "Merhaba, nasilsin?"
+                  }
+                },
+                "withHistory": {
+                  "summary": "Mesaj gecmisi ile",
+                  "value": {
+                    "messages": [
+                      {
+                        "content": "Merhaba",
+                        "role": "user"
+                      }
+                    ],
+                    "provider": "openai"
+                  }
+                },
+                "withOverride": {
+                  "summary": "Provider override",
+                  "value": {
+                    "content": "Merhaba",
+                    "model": "gemini-2.5-flash",
+                    "provider": "gemini"
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/PostMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "assistantMessage": {
+                    "content": "Merhaba! Size nasil yardimci olabilirim?",
+                    "model": "gpt-4.1-mini-2025-04-14",
+                    "provider": "openai",
+                    "role": "assistant"
+                  },
+                  "usage": {
+                    "completion_tokens": 38,
+                    "model": "gpt-4.1-mini-2025-04-14",
+                    "prompt_tokens": 16,
+                    "provider": "openai",
+                    "total_tokens": 54
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantResponse"
+                }
+              }
+            },
+            "description": "Asistan yaniti"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/QuotaExceeded"
+          },
+          "502": {
+            "$ref": "#/components/responses/ProviderError"
+          },
+          "504": {
+            "$ref": "#/components/responses/ProviderTimeout"
+          }
+        },
+        "summary": "Mesaj gonder (non-stream)",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/chats/{chatID}/stream": {
+      "post": {
+        "description": "Kullanici mesajini LLM'e gonderir ve yaniti Server-Sent Events\nile parca parca doner. Istek govdesi non-stream ile aynidir.\n\nSSE event tipleri:\n- `meta`: provider/model bilgisi ve usage\n- `delta`: metin parcasi\n- `done`: stream tamamlandi\n- `error`: hata olustu\n",
+        "operationId": "streamMessage",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/chatID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "content": "Kisa bir selamlama yaz"
+              },
+              "schema": {
+                "$ref": "#/components/schemas/PostMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "description": "SSE formati: `data: {\"type\":\"delta\",\"delta\":\"...\"}\\n\\n`\n",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Server-Sent Events stream"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/QuotaExceeded"
+          },
+          "502": {
+            "$ref": "#/components/responses/ProviderError"
+          },
+          "504": {
+            "$ref": "#/components/responses/ProviderTimeout"
+          }
+        },
+        "summary": "Mesaj gonder (SSE stream)",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Servisin ayakta olup olmadigini kontrol eder.",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "example": "OK",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Servis aktif"
+          }
+        },
+        "security": [],
+        "summary": "Health check",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/me": {
+      "get": {
+        "description": "JWT icindeki kullanici bilgilerini doner.",
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "Email": "user@example.com",
+                  "Role": "authenticated",
+                  "UserID": "d13456f1-5289-472e-a8d5-7256c8d33570"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticatedUser"
+                }
+              }
+            },
+            "description": "Kimlik dogrulanmis kullanici bilgisi"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "Mevcut kullanici bilgisi",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/providers": {
+      "get": {
+        "description": "Kayitli ve aktif provider'lari varsayilan bilgisiyle doner.",
+        "operationId": "listProviders",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "default": "openai",
+                  "providers": [
+                    {
+                      "enabled": true,
+                      "model": "gpt-4.1-mini",
+                      "name": "openai"
+                    },
+                    {
+                      "enabled": true,
+                      "model": "gemini-2.5-flash",
+                      "name": "gemini"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ListProvidersResponse"
+                }
+              }
+            },
+            "description": "Provider listesi"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "Aktif LLM provider listesi",
+        "tags": [
+          "providers"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "Default API base path",
+      "url": "/api"
+    }
+  ],
+  "tags": [
+    {
+      "description": "Sistem saglik kontrolu",
+      "name": "health"
+    },
+    {
+      "description": "Kimlik dogrulama",
+      "name": "auth"
+    },
+    {
+      "description": "LLM provider yonetimi",
+      "name": "providers"
+    },
+    {
+      "description": "Sohbet oturumlari",
+      "name": "chats"
+    },
+    {
+      "description": "Mesaj gonderme ve stream",
+      "name": "messages"
+    }
+  ]
+}

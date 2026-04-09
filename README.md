@@ -27,58 +27,58 @@
 
 # Thy Case Study Backend
 
-Supabase tabanli kimlik dogrulama ve rol yonetimi kullanan, LLM sohbet akislarini destekleyen Go backend uygulamasi.
+Supabase tabanlı kimlik doğrulama ve rol yönetimi kullanan, LLM sohbet akışlarını destekleyen Go backend uygulaması.
 
-**Surum notlari:** [CHANGELOG.md](CHANGELOG.md) - [RELEASE_NOTES.md](RELEASE_NOTES.md)
+**Sürüm notları:** [CHANGELOG.md](CHANGELOG.md) - [RELEASE_NOTES.md](RELEASE_NOTES.md)
 
 ## Built With gosupabase
 
-Bu proje, tarafimdan gelistirilen `gosupabase` kutuphanesi uzerine kuruludur. YAML tabanli endpoint tanimlari, JWT dogrulama ve role-based access control (RBAC) katmani `gosupabase` ile saglanir.
+Bu proje, tarafımdan geliştirilen `gosupabase` kütüphanesi üzerine kuruludur. YAML tabanlı endpoint tanımları, JWT doğrulama ve role-based access control (RBAC) katmanı `gosupabase` ile sağlanır.
 
 - GitHub: [github.com/messivite/gosupabase](https://github.com/messivite/gosupabase)
 - Go Package: [pkg.go.dev/github.com/messivite/gosupabase](https://pkg.go.dev/github.com/messivite/gosupabase)
 
-## Mimari Ozeti
+## Mimari Özeti
 
 - **Auth:** Supabase access token (`Authorization: Bearer <jwt>`)
 - **Roller:** `public.user_roles` -> hook -> JWT `claims.roles`
-- **Route bazli yetki:** `api.yaml` icindeki `roles: [...]`
-- **Profil:** `public.profiles` ve `auth.users` arasinda 1:1 iliski
-- **Chat persistence:** Varsayilan `supabase`; opsiyonel `memory`
-- **LLM:** `providers.yaml` + environment variable anahtarlari
-- **Kota ve audit:** Supabase tablolari + trigger + RPC
+- **Route bazlı yetki:** `api.yaml` içindeki `roles: [...]`
+- **Profil:** `public.profiles` ve `auth.users` arasında 1:1 ilişki
+- **Chat persistence:** Varsayılan `supabase`; opsiyonel `memory`
+- **LLM:** `providers.yaml` + environment variable anahtarları
+- **Kota ve audit:** Supabase tabloları + trigger + RPC
 
-## Proje Yapisi
+## Proje Yapısı
 
 ```text
 cmd/
-  api/main.go              -> API sunucu giris noktasi
-  server/main.go           -> gosupabase dev uyumlu giris noktasi
-  thy-case-llm/main.go     -> LLM provider ve deploy yonetim CLI'i
+  api/main.go              -> API sunucu giriş noktasi
+  server/main.go           -> gosupabase dev uyumlu giriş noktasi
+  thy-case-llm/main.go     -> LLM provider ve deploy yönetim CLI'i
 internal/
-  application/chat/        -> Use-case katmani
+  application/chat/        -> Use-case katmanı
   auth/                    -> JWT middleware ve context yardimcilari
-  chat/                    -> HTTP handler katmani
-  config/                  -> Provider konfigurasyonu ve sablonlar
-  deploy/                  -> deploy list/show/init sablonlari
+  chat/                    -> HTTP handler katmanı
+  config/                  -> Provider konfigürasyonu ve şablonlar
+  deploy/                  -> deploy list/show/init şablonları
   domain/chat/             -> Domain modelleri, interface'ler, hatalar
   provider/                -> OpenAI/Gemini adapter'lari ve registry
-  repo/                    -> Supabase ve memory repository implementasyonlari
+  repo/                    -> Supabase ve memory repository implementasyonları
 providers.yaml             -> LLM provider konfigürasyonu (non-secret)
-api.yaml                   -> Endpoint tanimlari ve rol kurallari
+api.yaml                   -> Endpoint tanımları ve rol kuralları
 supabase/                  -> Migration, function ve Supabase config dosyalari
 ```
 
 ## Provider Konfigurasyonu
 
-Provider metadata ve gizli anahtarlar ayridir:
+Provider metadata ve gizli anahtarlar ayrıdır:
 
-| Dosya | Icerik | Git'e eklenir? |
+| Dosya | İçerik | Git'e eklenir? |
 |---|---|---|
-| `providers.yaml` | Provider adi, model, env key referansi | Evet |
-| `.env` | Gercek API key degerleri | Hayir |
+| `providers.yaml` | Provider adı, model, env key referansı | Evet |
+| `.env` | Gerçek API key değerleri | Hayır |
 
-Ornek `providers.yaml`:
+Örnek `providers.yaml`:
 
 ```yaml
 default: openai
@@ -91,11 +91,11 @@ providers:
     env_key: GEMINI_API_KEY
 ```
 
-Uygulama acilisinda `providers.yaml` okunur. Env key degeri bulunamayan provider kaydi atlanir ve log uyarisi uretilir.
+Uygulama açılışında `providers.yaml` okunur. Env key değeri bulunamayan provider kaydı atlanır ve log uyarısı üretilir.
 
 ## thy-case-llm CLI
 
-Yardim:
+Yardım:
 
 ```bash
 go run ./cmd/thy-case-llm help
@@ -107,7 +107,7 @@ Global kurulum:
 go install ./cmd/thy-case-llm
 ```
 
-Tüm komutlari derleyerek kurmak:
+Tüm komutları derleyerek kurmak:
 
 ```bash
 git clone https://github.com/messivite/go-thy-case-study-backend.git
@@ -124,21 +124,21 @@ thy-case-llm version
 
 ### Komutlar
 
-| Komut | Aciklama |
+| Komut | Açıklama |
 |---|---|
 | `provider add` | Yeni provider ekler (`--template` destekler) |
-| `provider list` | Kayitli provider'lari listeler |
-| `provider remove <name>` | Provider kaydini siler |
-| `provider set-default <name>` | Varsayilan provider'i degistirir |
-| `provider validate` | Env key dogrulamasi yapar |
-| `templates list` | Yerlesik provider sablonlarini listeler |
-| `templates show <name>` | Sablon detayini gosterir |
-| `doctor` | Hizli sistem saglik kontrolu |
+| `provider list` | Kayıtlı provider'ları listeler |
+| `provider remove <name>` | Provider kaydını siler |
+| `provider set-default <name>` | Varsayılan provider'ı değiştirir |
+| `provider validate` | Env key doğrulaması yapar |
+| `templates list` | Yerleşik provider şablonlarını listeler |
+| `templates show <name>` | Şablon detayını gösterir |
+| `doctor` | Hızlı sistem sağlık kontrolü |
 | `deploy list` | Desteklenen deploy hedeflerini listeler |
-| `deploy show <id>` | Hedef ve yazilacak dosya detayini gosterir |
-| `deploy init <id>` | Sablon dosyalarini repoya yazar |
+| `deploy show <id>` | Hedef ve yazılacak dosya detayını gösterir |
+| `deploy init <id>` | Şablon dosyalarını repoya yazar |
 
-### Kullanim Ornekleri
+### Kullanım Örnekleri
 
 ```bash
 thy-case-llm provider list
@@ -151,44 +151,44 @@ thy-case-llm doctor
 
 ## Environment
 
-`.env.example` icindeki temel degiskenler:
+`.env.example` içindeki temel değişkenler:
 
-- `PORT` (varsayilan `8081`)
+- `PORT` (varsayılan `8081`)
 - `CHAT_PERSISTENCE` (`supabase` veya `memory`)
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_JWT_SECRET`
-- `SUPABASE_JWT_VALIDATION_MODE` (`auto` onerilir)
+- `SUPABASE_JWT_VALIDATION_MODE` (`auto` önerilir)
 - `SUPABASE_ROLE_CLAIM_KEY`
 - `OPENAI_API_KEY`
 - `GEMINI_API_KEY`
-- `PROVIDERS_CONFIG` (varsayilan `providers.yaml`)
+- `PROVIDERS_CONFIG` (varsayılan `providers.yaml`)
 - `OBSERVABILITY_LOG_FILE` (opsiyonel)
 - `OTEL_EXPORTER_OTLP_ENDPOINT` (opsiyonel)
 
 ### CHAT_PERSISTENCE
 
-| Deger | Davranis |
+| Değer | Davranış |
 |---|---|
-| `supabase` veya bos | Sohbet verisi Supabase `chat_sessions` / `chat_messages` tablolarina yazilir |
-| `memory` | Veri sadece process RAM'inde tutulur; process kapaninca silinir |
+| `supabase` veya boş | Sohbet verisi Supabase `chat_sessions` / `chat_messages` tablolarına yazılır |
+| `memory` | Veri sadece process RAM'inde tutulur; process kapanınca silinir |
 
 Notlar:
 
 - `CHAT_PERSISTENCE=supabase` iken `SUPABASE_URL` veya `SUPABASE_SERVICE_ROLE_KEY` yoksa uygulama memory moduna fallback eder.
-- `cmd/api` ve `cmd/server` acilisinda lokal `.env` dosyasini yukler (`godotenv.Overload`); dosya degerleri stale shell export degerlerinin uzerine yazilir.
-- Uretim ortaminda `.env` dosyasi yerine platform environment degiskenleri kullanilmalidir.
+- `cmd/api` ve `cmd/server` açılışında lokal `.env` dosyasını yükler (`godotenv.Overload`); dosya değerleri stale shell export değerlerinin üzerine yazılır.
+- Üretim ortamında `.env` dosyası yerine platform environment değişkenleri kullanılmalıdır.
 
 ### Observability
 
-`internal/observability` paketi JSON line formatinda log uretir. `OBSERVABILITY_LOG_FILE` ayarlanirsa ayni loglar dosyaya append edilir.
+`internal/observability` paketi JSON line formatında log üretir. `OBSERVABILITY_LOG_FILE` ayarlanırsa aynı loglar dosyaya append edilir.
 
 ### OpenTelemetry
 
-Bu repoda minimal HTTP trace entegrasyonu vardir. `OTEL_EXPORTER_OTLP_ENDPOINT` tanimli degilse tracing devreye girmez.
+Bu repoda minimal HTTP trace entegrasyonu vardır. `OTEL_EXPORTER_OTLP_ENDPOINT` tanımlı değilse tracing devreye girmez.
 
-Ornek:
+Örnek:
 
 ```bash
 ./otelcol --config=/ABSOLUTE/PATH/thy-case-study-backend/otel/collector.yaml
@@ -196,25 +196,25 @@ Ornek:
 
 ## Endpointler
 
-| Metot | Endpoint | Auth | Aciklama |
+| Metot | Endpoint | Auth | Açıklama |
 |---|---|---|---|
-| `GET` | `/health` veya `/api/health` | Hayir | Health check (`OK`) |
+| `GET` | `/health` veya `/api/health` | Hayır | Health check (`OK`) |
 | `GET` | `/api/me` | Evet | JWT'den user bilgisi |
 | `GET` | `/api/providers` | Evet | Aktif provider listesi ve default bilgi |
-| `POST` | `/api/chats` | Evet | Yeni sohbet olusturur |
-| `GET` | `/api/chats` | Evet | Sohbet listesini doner |
-| `GET` | `/api/chats/{chatID}` | Evet | Sohbet ve mesaj detaylarini doner |
-| `POST` | `/api/chats/{chatID}/messages` | Evet | Non-stream mesaj gonderir |
-| `POST` | `/api/chats/{chatID}/stream` | Evet | SSE stream mesaj gonderir |
+| `POST` | `/api/chats` | Evet | Yeni sohbet oluşturur |
+| `GET` | `/api/chats` | Evet | Sohbet listesini döner |
+| `GET` | `/api/chats/{chatID}` | Evet | Sohbet ve mesaj detaylarını döner |
+| `POST` | `/api/chats/{chatID}/messages` | Evet | Non-stream mesaj gönderir |
+| `POST` | `/api/chats/{chatID}/stream` | Evet | SSE stream mesaj gönderir |
 
-## Auth ve Rol Akisi
+## Auth ve Rol Akışı
 
-1. Kullanici Supabase ile giris yapar ve access token alir.
-2. Hook mekanizmasi `user_roles` tablosundan rollerin JWT claim'lerine yazilmasini saglar.
-3. API token'i dogrular.
-4. Endpoint bazli rol kurallari `api.yaml` uzerinden uygulanir.
+1. Kullanıcı Supabase ile giriş yapar ve access token alır.
+2. Hook mekanizması `user_roles` tablosundan rollerin JWT claim'lerine yazılmasını sağlar.
+3. API token'i doğrular.
+4. Endpoint bazlı rol kuralları `api.yaml` üzerinden uygulanır.
 
-Rol degisikligi sonrasinda yeni token alinmalidir.
+Rol değişikliği sonrasında yeni token alınmalıdır.
 
 ## Rol Atama
 
@@ -236,9 +236,9 @@ where user_id = 'USER_UUID_HERE'::uuid
 
 ## PostgreSQL (Supabase) Veri Modeli
 
-- `auth.users` -> Kimlik kayitlari
-- `public.profiles` -> Kullanici profil verisi (1:1)
-- `public.user_roles` -> Coklu rol iliskisi
+- `auth.users` -> Kimlik kayıtları
+- `public.profiles` -> Kullanıcı profil verisi (1:1)
+- `public.user_roles` -> Çoklu rol ilişkisi
 - `public.chat_sessions`, `public.chat_messages` -> Sohbet verisi
 - `public.llm_interaction_log` -> LLM audit ve usage logu
 - `public.llm_quota_defaults`, `public.user_llm_usage_quota` -> Kota konfigürasyonu
@@ -265,9 +265,9 @@ npx supabase functions deploy register-push-token --project-ref <PROJECT_REF>
 
 ## CI ve Coverage
 
-GitHub Actions pipeline'i `build`, `test` ve `vet` adimlarini calistirir. Coverage ciktilari Codecov'a gonderilir.
+GitHub Actions pipeline'i `build`, `test` ve `vet` adımlarını çalıştırır. Coverage çıktıları Codecov'a gönderilir.
 
-## Yerelde Calistirma
+## Yerelde Çalıştırma
 
 ```bash
 gosupabase dev
@@ -285,7 +285,7 @@ go run ./cmd/api
 TOKEN="<ACCESS_TOKEN>"
 ```
 
-Sohbet olusturma:
+Sohbet oluşturma:
 
 ```bash
 curl -X POST "http://localhost:8081/api/chats" \
@@ -294,7 +294,7 @@ curl -X POST "http://localhost:8081/api/chats" \
   -d '{"title":"ilk test chat session","provider":"gemini","model":"gemini-2.5-flash"}'
 ```
 
-Mesaj gonderme (non-stream):
+Mesaj gönderme (non-stream):
 
 ```bash
 curl -X POST "http://localhost:8081/api/chats/<CHAT_ID>/messages" \
@@ -309,7 +309,7 @@ curl -X POST "http://localhost:8081/api/chats/<CHAT_ID>/messages" \
   }'
 ```
 
-Mesaj gonderme (stream):
+Mesaj gönderme (stream):
 
 ```bash
 curl -N -X POST "http://localhost:8081/api/chats/<CHAT_ID>/stream" \
@@ -319,7 +319,7 @@ curl -N -X POST "http://localhost:8081/api/chats/<CHAT_ID>/stream" \
     "provider":"gemini",
     "model":"gemini-2.5-flash",
     "messages":[
-      {"role":"user","content":"Kisa bir selamlama yaz"}
+      {"role":"user","content":"Kısa bir selamlama yaz"}
     ]
   }'
 ```
@@ -328,19 +328,19 @@ curl -N -X POST "http://localhost:8081/api/chats/<CHAT_ID>/stream" \
 
 ### Tamamlananlar
 
-- `thy-case-llm deploy` komutlari (railway/fly/vercel sablonlari)
-- LLM interaction audit kaydi (`llm_interaction_log`)
+- `thy-case-llm deploy` komutları (railway/fly/vercel şablonları)
+- LLM interaction audit kaydı (`llm_interaction_log`)
 - Token kota modeli (`llm_quota_defaults`, `user_llm_usage_quota`)
-- Profil olusumunda quota satiri ureten trigger
-- Kota asiminda tutarli HTTP 429 hata kodlari
+- Profil oluşumunda quota satırı üreten trigger
+- Kota aşımında tutarlı HTTP 429 hata kodları
 
 ### Planlanan
 
-- Self-hosted / ozel endpoint tanimlarinin provider konfigurasyonuna eklenmesi
+- Self-hosted / özel endpoint tanımlarının provider konfigürasyonuna eklenmesi
 
 ## Deploy
 
-CLI v0.3.0+ ile deploy sablonlari uretilir:
+CLI v0.3.0+ ile deploy şablonları üretilir:
 
 ```bash
 thy-case-llm deploy list
@@ -353,8 +353,8 @@ Desteklenen hedefler:
 
 | id | Uretilen dosyalar | Not |
 |---|---|---|
-| `railway` | `Dockerfile`, `railway.toml` | Varsayilan health path `/health` |
-| `fly` | `Dockerfile`, `fly.toml` | Benzer Docker tabanli kurulum |
+| `railway` | `Dockerfile`, `railway.toml` | Varsayılan health path `/health` |
+| `fly` | `Dockerfile`, `fly.toml` | Benzer Docker tabanlı kurulum |
 | `vercel` | `vercel.json`, `deploy/VERCEL.md` | Rewrite temelli yonlendirme senaryosu |
 
 Yaygin flag'ler: `--dry-run`, `--force`, `--out`, `--port`, `--main-package`, `--health-path`, `--api-base-url`, `--module`.
@@ -497,7 +497,7 @@ go run ./cmd/thy-case-llm help
 Global komut olarak kullanmak için:
 
 ```bash
-cd /Users/kullaniciAdiniz/Projects/thy-case-study-backend
+cd /Users/kullanıcıAdınız/Projects/thy-case-study-backend
 go install ./cmd/thy-case-llm
 ```
 
@@ -534,7 +534,7 @@ unknown command: templates
 **Ne yapayım:** Projede tekrar `go install`, `$(go env GOPATH)/bin` PATH’te olsun:
 
 ```bash
-cd /Users/kullaniciAdiniz/Projects/thy-case-study-backend
+cd /Users/kullanıcıAdınız/Projects/thy-case-study-backend
 go install ./cmd/thy-case-llm
 which thy-case-llm
 thy-case-llm version
@@ -600,7 +600,7 @@ thy-case-llm provider remove gemini
 1) Binary'yi kurun:
 
 ```bash
-cd /Users/kullaniciAdiniz/Projects/thy-case-study-backend
+cd /Users/kullanıcıAdınız/Projects/thy-case-study-backend
 go install ./cmd/thy-case-llm
 ```
 
@@ -910,7 +910,7 @@ curl -N -X POST "http://localhost:8081/api/chats/<CHAT_ID>/stream" \
     "provider":"gemini",
     "model":"gemini-2.5-flash",
     "messages":[
-      {"role":"user","content":"Bana kisa bir selamlama yaz"}
+      {"role":"user","content":"Bana kısa bir selamlama yaz"}
     ]
   }'
 ```
@@ -985,7 +985,7 @@ thy-case-llm deploy init fly --force
 thy-case-llm deploy init railway --out ./backend
 
 # Vercel rewrite hedefi (sonunda / olmasın)
-thy-case-llm deploy init vercel --api-base-url https://api.ornek.com
+thy-case-llm deploy init vercel --api-base-url https://api.örnek.com
 
 # go.mod yoksa veya modül adını elle vermek için
 thy-case-llm deploy init railway --module github.com/senin/projen
