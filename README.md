@@ -334,51 +334,6 @@ veya:
 go run ./cmd/api
 ```
 
-## Faz 0 Test (curl)
-
-```bash
-TOKEN="<ACCESS_TOKEN>"
-```
-
-Sohbet oluşturma:
-
-```bash
-curl -X POST "http://localhost:8081/api/chats" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"title":"ilk test chat session","provider":"gemini","model":"gemini-2.5-flash"}'
-```
-
-Mesaj gönderme (non-stream):
-
-```bash
-curl -X POST "http://localhost:8081/api/chats/<CHAT_ID>/messages" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "provider":"openai",
-    "model":"gpt-4.1-mini",
-    "messages":[
-      {"role":"user","content":"Merhaba"}
-    ]
-  }'
-```
-
-Mesaj gönderme (stream):
-
-```bash
-curl -N -X POST "http://localhost:8081/api/chats/<CHAT_ID>/stream" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "provider":"gemini",
-    "model":"gemini-2.5-flash",
-    "messages":[
-      {"role":"user","content":"Kısa bir selamlama yaz"}
-    ]
-  }'
-```
-
 ## Deploy
 
 CLI v0.3.0+ ile deploy şablonları üretilir:
