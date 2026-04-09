@@ -135,6 +135,43 @@ func (r *SupabaseRepository) SaveMessage(ctx context.Context, sessionID, userID 
 	return rows[0].toDomain(), nil
 }
 
+func (r *SupabaseRepository) SaveMessages(ctx context.Context, sessionID, userID string, messages []domain.BatchMessage) ([]domain.ChatMessage, error) {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+
+	body := make([]map[string]any, 0, len(messages))
+	for _, msg := range messages {
+		row := map[string]any{
+			"session_id": sessionID,
+			"user_id":    userID,
+			"role":       string(domain.RoleUser),
+			"content":    msg.Content,
+		}
+		if msg.Provider != "" {
+			row["provider"] = msg.Provider
+		}
+		if msg.Model != "" {
+			row["model"] = msg.Model
+		}
+		body = append(body, row)
+	}
+
+	var rows []chatMessageRow
+	if err := r.doRequest(ctx, http.MethodPost, "/chat_messages", body, &rows); err != nil {
+		return nil, fmt.Errorf("save messages: %w", err)
+	}
+	if len(rows) == 0 {
+		return []domain.ChatMessage{}, nil
+	}
+
+	saved := make([]domain.ChatMessage, 0, len(rows))
+	for _, row := range rows {
+		saved = append(saved, row.toDomain())
+	}
+	return saved, nil
+}
+
 func (r *SupabaseRepository) GetMessagesBySession(ctx context.Context, sessionID string) ([]domain.ChatMessage, error) {
 	if _, err := uuid.Parse(sessionID); err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)

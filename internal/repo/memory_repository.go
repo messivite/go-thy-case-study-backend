@@ -132,6 +132,40 @@ func (r *MemoryRepository) SaveMessage(ctx context.Context, sessionID, userID st
 	return message, nil
 }
 
+func (r *MemoryRepository) SaveMessages(ctx context.Context, sessionID, userID string, messages []domain.BatchMessage) ([]domain.ChatMessage, error) {
+	sessionUUID, err := uuid.Parse(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sessions[sessionUUID]; !ok {
+		return nil, domain.ErrSessionNotFound
+	}
+
+	saved := make([]domain.ChatMessage, 0, len(messages))
+	now := time.Now().UTC()
+	for i, msg := range messages {
+		createdAt := now.Add(time.Duration(i) * time.Millisecond)
+		savedMsg := domain.ChatMessage{
+			ID:        uuid.New(),
+			SessionID: sessionUUID,
+			UserID:    userID,
+			Role:      domain.RoleUser,
+			Content:   msg.Content,
+			CreatedAt: createdAt,
+			Provider:  msg.Provider,
+			Model:     msg.Model,
+		}
+		r.messages[sessionUUID] = append(r.messages[sessionUUID], savedMsg)
+		saved = append(saved, savedMsg)
+	}
+
+	return saved, nil
+}
+
 func (r *MemoryRepository) GetMessagesBySession(ctx context.Context, sessionID string) ([]domain.ChatMessage, error) {
 	sessionUUID, err := uuid.Parse(sessionID)
 	if err != nil {

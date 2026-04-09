@@ -32,6 +32,9 @@ func TestMemoryQuotaRepository_NoOps(t *testing.T) {
 	if err := r.FailPendingLog(context.Background(), "id", "err", "code", 500); err != nil {
 		t.Fatal(err)
 	}
+	if err := r.CancelPendingLog(context.Background(), "id"); err != nil {
+		t.Fatal(err)
+	}
 	if err := r.SetUsageLog(context.Background(), "id", 10, 20, 30); err != nil {
 		t.Fatal(err)
 	}

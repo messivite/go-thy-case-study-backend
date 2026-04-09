@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -51,7 +52,25 @@ type chatMessage struct {
 	Model    string `json:"model,omitempty"`
 }
 
+type syncRequest struct {
+	Provider string        `json:"provider,omitempty"`
+	Model    string        `json:"model,omitempty"`
+	Messages []syncMessage `json:"messages"`
+}
+
+type syncMessage struct {
+	Content string `json:"content"`
+	SentAt  string `json:"sentAt,omitempty"`
+}
+
 type assistantResponse struct {
+	AssistantMessage chatMessage    `json:"assistantMessage"`
+	Usage            map[string]any `json:"usage,omitempty"`
+}
+
+type syncResponse struct {
+	SyncedCount      int            `json:"syncedCount"`
+	SyncedMessages   []chatMessage  `json:"syncedMessages"`
 	AssistantMessage chatMessage    `json:"assistantMessage"`
 	Usage            map[string]any `json:"usage,omitempty"`
 }
@@ -84,6 +103,8 @@ type providerInfoItem struct {
 	Model   string `json:"model"`
 	Enabled bool   `json:"enabled"`
 }
+
+const maxSyncMessages = 50
 
 func (h *Handler) ListProviders(w http.ResponseWriter, r *http.Request) {
 	metas := h.uc.ListProviders()
@@ -346,6 +367,86 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+func (h *Handler) SyncMessages(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.AuthenticatedUserFromContext(r.Context())
+	if !ok {
+		httpx.Unauthorized(w)
+		return
+	}
+
+	chatID := chi.URLParam(r, "chatID")
+	var req syncRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.BadRequest(w, "Invalid request payload")
+		return
+	}
+	if len(req.Messages) == 0 {
+		httpx.BadRequest(w, "messages cannot be empty")
+		return
+	}
+	if len(req.Messages) > maxSyncMessages {
+		httpx.BadRequest(w, fmt.Sprintf("messages exceeds limit (%d)", maxSyncMessages))
+		return
+	}
+
+	type orderedMsg struct {
+		content string
+		sentAt  time.Time
+		hasTime bool
+		idx     int
+	}
+	ordered := make([]orderedMsg, 0, len(req.Messages))
+	for i, msg := range req.Messages {
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			httpx.BadRequest(w, "message content cannot be empty")
+			return
+		}
+		item := orderedMsg{content: content, idx: i}
+		if strings.TrimSpace(msg.SentAt) != "" {
+			ts, err := time.Parse(time.RFC3339, msg.SentAt)
+			if err != nil {
+				httpx.BadRequest(w, "invalid sentAt format, expected RFC3339")
+				return
+			}
+			item.sentAt = ts
+			item.hasTime = true
+		}
+		ordered = append(ordered, item)
+	}
+	slices.SortStableFunc(ordered, func(a, b orderedMsg) int {
+		if a.hasTime && b.hasTime {
+			if a.sentAt.Before(b.sentAt) {
+				return -1
+			}
+			if a.sentAt.After(b.sentAt) {
+				return 1
+			}
+		}
+		return a.idx - b.idx
+	})
+
+	batch := make([]domain.BatchMessage, 0, len(ordered))
+	for _, item := range ordered {
+		batch = append(batch, domain.BatchMessage{
+			Content: item.content,
+		})
+	}
+
+	result, err := h.uc.SyncMessages(r.Context(), user.UserID, chatID, req.Provider, req.Model, batch)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, syncResponse{
+		SyncedCount:      len(result.SyncedMessages),
+		SyncedMessages:   toAPIMessages(result.SyncedMessages),
+		AssistantMessage: toAPIMessages([]domain.ChatMessage{result.AssistantMessage})[0],
+		Usage:            result.Usage,
+	})
 }
 
 func toDomainMessages(messages []chatMessage) []domain.ChatMessage {
