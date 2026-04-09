@@ -151,12 +151,57 @@ thy-case-llm version
 ### Kullanım Örnekleri
 
 ```bash
+# Provider listele
 thy-case-llm provider list
+
+# Hazır şablonları listele ve detay gör
 thy-case-llm templates list
 thy-case-llm templates show openai
+
+# Yeni provider ekle (interaktif)
+thy-case-llm provider add
+
+# Hazır şablonla ekle (ör. OpenAI)
 thy-case-llm provider add --template openai --set-default
+
+# Yeni provider ekle (flag ile)
+thy-case-llm provider add --name openai --model gpt-4o --env-key OPENAI_API_KEY
+
+# Varsayılan provider'ı gemini yap
+thy-case-llm provider set-default gemini
+
+# Konfigürasyon doğrula
 thy-case-llm provider validate
+
+# Hızlı sağlık kontrolü
 thy-case-llm doctor
+
+# Provider kaldır
+thy-case-llm provider remove gemini
+```
+
+### Olası Hata ve Çözüm
+
+`zsh: command not found: thy-case-llm` çıkarsa:
+
+1. Binary'yi kurun:
+
+```bash
+cd /Users/kullaniciAdiniz/Projects/go-thy-case-study-backend
+go install ./cmd/thy-case-llm
+```
+
+2. Go bin path'i `PATH` içinde değilse ekleyin:
+
+```bash
+echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Ya da direkt:
+
+```bash
+go run ./cmd/thy-case-llm doctor
 ```
 
 ## Environment
@@ -191,19 +236,58 @@ Notlar:
 - `cmd/api` ve `cmd/server` açılışında lokal `.env` dosyasını yükler (`godotenv.Overload`); dosya değerleri stale shell export değerlerinin üzerine yazılır.
 - Üretim ortamında `.env` dosyası yerine platform environment değişkenleri kullanılmalıdır.
 
-### Observability
+### Observability (dosyaya log)
 
-`internal/observability` paketi JSON line formatında log üretir. `OBSERVABILITY_LOG_FILE` ayarlanırsa aynı loglar dosyaya append edilir.
+`internal/observability` içindeki `Info` / `Warn` / `Error` ve `LLM*` helper'ları tek satırlık JSON üretir (`ts`, `level`, `event`, `fields`, ...). `OBSERVABILITY_LOG_FILE` set edilirse **aynı satırlar dosyaya append** edilir; process sonunda dosya `CloseFileLog` ile kapatılır (`cmd/api` ve `cmd/server`).
 
-### OpenTelemetry
+Örnek satır:
 
-Bu repoda minimal HTTP trace entegrasyonu vardır. `OTEL_EXPORTER_OTLP_ENDPOINT` tanımlı değilse tracing devreye girmez.
+```json
+{"ts":"2026-04-09T12:00:00.123456789Z","level":"info","event":"llm.request","fields":{"provider":"openai","model":"gpt-4.1-mini","user_id":"...","session_id":"..."}}
+```
 
-Örnek:
+Üretimde dosya boyutu için logrotate / sidecar veya merkezi toplayıcı kullan; uygulama içinde rotation yok (bilinçli sade tutuş).
+
+### OpenTelemetry (trace)
+
+**Zorluk:** Orta - bu repoda **minimal** kurulum var: gelen HTTP istekleri için **server span** (chi router + `otelhttp`), export **OTLP/HTTP**. Env yoksa **hiçbir şey çalışmaz** (sıfır ek yük).
+
+| Env | Anlam |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` veya `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Ornek: `http://localhost:4318` (Collector HTTP). Tanımlı değilse tracing kapalı. |
+| `OTEL_SERVICE_NAME` | Varsayılan `thy-case-study-api`. |
+
+Örnek Collector config bu repoda: **`otel/collector.yaml`**. Binary nerede olursa olsun **config'e tam yol** ver:
 
 ```bash
 ./otelcol --config=/ABSOLUTE/PATH/thy-case-study-backend/otel/collector.yaml
 ```
+
+(`config.yaml: no such file` hatası, komutu çalıştırdığın dizinde dosya arandığı içindir; `--config=` ile proje içindeki yolu göster.)
+
+#### OpenTelemetry Collector kurulumu (yerel test)
+
+1. **İndir** - Resmi sürümler [OpenTelemetry Collector releases](https://github.com/open-telemetry/opentelemetry-collector-releases/releases) sayfasında. Bu repodaki örnek config **Core** dağıtımı (`otelcol`) ile uyumludur; macOS için `otelcol_*_darwin_arm64.tar.gz` veya `*_amd64` uygun olanı seç. Daha fazla exporter/receiver gerekiyorsa aynı sayfadan **[otelcol-contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)** varlığını da kullanabilirsin. Kurulum özeti: [Collector installation](https://opentelemetry.io/docs/collector/installation/).
+2. **Arşivi aç**, `otelcol` binary'sini istediğin klasöre koy. İlk çalıştırmada macOS "bilinmeyen geliştirici" diyebilir: Finder'da sağ tık -> **Aç** veya `xattr -dr com.apple.quarantine ./otelcol`.
+3. **Collector'ı ayrı terminalde çalıştır** (pencere açık kalsın):
+
+   ```bash
+   ./otelcol --config=/ABSOLUTE/PATH/thy-case-study-backend/otel/collector.yaml
+   ```
+
+   Log'da `Starting HTTP server` ... `endpoint: "[::]:4318"` görünmeli.
+4. **API tarafı** - `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` (ve isteğe bağlı `OTEL_SERVICE_NAME`) tanımlı olsun; repo kökündeki `.env` içine yazabilirsin (`cmd/api` açılışta yükler) veya export / IDE env kullan.
+5. **Test** - `GET /health` ve `GET /api/health` trace üretmez; `GET /api/providers` veya `GET /api/chats` gibi korumalı bir endpoint'e JWT ile istek at. Trace çıktısı **Collector'ın çalıştığı terminalde** (`debug` exporter) görünür.
+
+**Örnek ekran görüntüsü** - Collector'da gelen span (bu projeden `GET /api/chats`, `debug` exporter çıktısı):
+
+![OpenTelemetry Collector debug exporter ile gelen trace örneği](https://i.ibb.co/VWrfvghD/Screenshot-2026-04-09-at-02-22-32.png)
+
+*(Aynı görüntü doğrudan link: [Screenshot-2026-04-09-at-02-22-32.png](https://i.ibb.co/VWrfvghD/Screenshot-2026-04-09-at-02-22-32.png))*
+
+Üretimde Collector'a Jaeger, Grafana Tempo, vendor OTLP uçları gibi **exporter** eklenir; yerelde sadece `debug` ile konsolda doğrulamak yeterli.
+
+**Sonraki seviye (yapılmadı):** LLM çağrıları için `usecase` içinde `otel.Tracer` ile child span, metrics, log->trace bağlama - ihtiyaç oldukça eklenebilir.
 
 ## API Dokümantasyonu (Swagger UI)
 
@@ -273,7 +357,7 @@ Rol değişikliği sonrasında yeni token alınmalıdır.
 
 ## Rol Atama
 
-Rol ekleme:
+Bir kullanıcıya rol eklemek:
 
 ```sql
 insert into public.user_roles (user_id, role)
@@ -281,7 +365,15 @@ values ('USER_UUID_HERE'::uuid, 'editor')
 on conflict (user_id, role) do nothing;
 ```
 
-Rol silme:
+Admin rolü vermek:
+
+```sql
+insert into public.user_roles (user_id, role)
+values ('USER_UUID_HERE'::uuid, 'admin')
+on conflict (user_id, role) do nothing;
+```
+
+Admin rolünü kaldırmak:
 
 ```sql
 delete from public.user_roles
@@ -289,14 +381,47 @@ where user_id = 'USER_UUID_HERE'::uuid
   and role = 'admin';
 ```
 
+Kullanıcının mevcut rollerini görmek:
+
+```sql
+select user_id, role
+from public.user_roles
+where user_id = 'USER_UUID_HERE'::uuid;
+```
+
+Mevcut rolü güncellemek (ör. `admin` -> `editor`):
+
+```sql
+update public.user_roles
+set role = 'editor'
+where user_id = 'USER_UUID_HERE'::uuid
+  and role = 'admin';
+```
+
+## Rol Değişimi Nasıl Tetikleniyor?
+
+1. `user_roles` tablosuna `insert/update/delete` işlemi yapılır.
+2. `trg_user_roles_sync_auth_metadata` trigger'ı çalışır.
+3. `auth.users.raw_app_meta_data.roles` alanı güncellenir.
+4. Kullanıcı yeni token aldığında hook yeniden `user_roles` tablosunu okuyup JWT içindeki `claims.roles` alanını yazar.
+
+Eski token'ın içeriği sonradan değişmez; rol değişikliği sonrası mutlaka yeni token alınmalıdır.
+
+## Profiles Akışı
+
+- User oluştuğunda trigger ile `public.profiles` satırı otomatik açılır.
+- `is_anonymous` değeri `auth` tarafındaki flag'den taşınır.
+- `display_name`, `avatar_url` gibi profil alanları uygulama tarafından güncellenir.
+
 ## PostgreSQL (Supabase) Veri Modeli
 
 - `auth.users` -> Kimlik kayıtları
-- `public.profiles` -> Kullanıcı profil verisi (1:1)
-- `public.user_roles` -> Çoklu rol ilişkisi
-- `public.chat_sessions`, `public.chat_messages` -> Sohbet verisi
+- `public.profiles` -> Profil tablosu (`auth.users` ile 1:1)
+- `public.user_roles` -> Kullanıcıya bağlı çoklu rol ilişkisi
+- `public.chat_sessions`, `public.chat_messages` -> Sohbet verisi (migration dosyalarında tanımlı)
 - `public.llm_interaction_log` -> LLM audit ve usage logu
 - `public.llm_quota_defaults`, `public.user_llm_usage_quota` -> Kota konfigürasyonu
+- RLS kuralları Postgres/Supabase tarafında uygulanır; API tarafında JWT doğrulaması ve role enforcement devam eder.
 
 ## Supabase Kurulum
 
