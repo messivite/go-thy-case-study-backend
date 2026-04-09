@@ -44,7 +44,7 @@ func main() {
 		}
 	}()
 
-	port := envOrDefault("PORT", envOrDefault("APP_PORT", "8081"))
+	port := envOrDefault("PORT", envOrDefault("APP_PORT", "8082"))
 	roleClaimKey := envOrDefault("SUPABASE_ROLE_CLAIM_KEY", "role")
 
 	jwtSecret := os.Getenv("SUPABASE_JWT_SECRET")

@@ -13,14 +13,14 @@ func TestLoadAllSchemas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(schemas) < 3 {
-		t.Fatalf("expected at least 3 schemas, got %d", len(schemas))
+	if len(schemas) < 4 {
+		t.Fatalf("expected at least 4 schemas, got %d", len(schemas))
 	}
 	ids := make(map[string]bool)
 	for _, s := range schemas {
 		ids[s.ID] = true
 	}
-	for _, want := range []string{"railway", "fly", "vercel"} {
+	for _, want := range []string{"railway", "fly", "vercel", "docker"} {
 		if !ids[want] {
 			t.Errorf("missing schema id %q", want)
 		}
@@ -39,6 +39,21 @@ func TestInitRailwayDryRun(t *testing.T) {
 	}
 	if !strings.Contains(out, "FROM golang") {
 		t.Fatalf("expected Dockerfile content in dry-run")
+	}
+}
+
+func TestInitDockerDryRun(t *testing.T) {
+	var buf bytes.Buffer
+	err := Init("docker", InitOptions{DryRun: true, OutDir: t.TempDir(), OutputWriter: &buf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "docker-compose.yml") {
+		t.Fatalf("dry-run output should mention docker-compose.yml, got:\n%s", out)
+	}
+	if !strings.Contains(out, "services:") {
+		t.Fatalf("expected compose content in dry-run")
 	}
 }
 
