@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/turkiye-header.svg?v=4" alt="THY Case Study Backend" width="100%" />
+  <img src="./assets/turkiye-header.svg?v=4" alt="Case Study Backend Side for THY" width="100%" />
 </p>
 <p align="center">
   <a href="https://pkg.go.dev/github.com/messivite/gosupabase">
@@ -25,7 +25,7 @@
   </a>
 </p>
 
-# Thy Case Study Backend
+# THY için Case Study Kapsamında Hazırlanan Backend Side Go Projesi
 
 Supabase tabanlı kimlik doğrulama ve rol yönetimi kullanan, LLM sohbet akışlarını destekleyen Go backend uygulaması.
 
@@ -33,7 +33,8 @@ Supabase tabanlı kimlik doğrulama ve rol yönetimi kullanan, LLM sohbet akış
 
 ## Built With gosupabase
 
-Bu proje, tarafımdan geliştirilen `gosupabase` kütüphanesi üzerine kuruludur. YAML tabanlı endpoint tanımları, JWT doğrulama ve role-based access control (RBAC) katmanı `gosupabase` ile sağlanır.
+Bu proje, tarafımdan geliştirilen `gosupabase` kütüphanesi üzerine kuruludur. YAML tabankı endpoint tanımları, JWT validate ve role-based access control (RBAC) katmanı `gosupabase` ile sağlanır ve yönetilir. Supabase ile yeteneleri çoğu fonksiyonu için tam uyumludur.
+
 
 - GitHub: [github.com/messivite/gosupabase](https://github.com/messivite/gosupabase)
 - Go Package: [pkg.go.dev/github.com/messivite/gosupabase](https://pkg.go.dev/github.com/messivite/gosupabase)
