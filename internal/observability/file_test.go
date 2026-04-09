@@ -17,13 +17,18 @@ func TestEnableFileLogWritesJSONL(t *testing.T) {
 	}
 
 	Info("test.event", map[string]any{"k": 1})
+	LLMCancelled("openai", "gpt-4o", "u1", "s1", 12)
 	CloseFileLog()
 
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), "test.event") || !strings.Contains(string(b), `"level":"info"`) {
+	content := string(b)
+	if !strings.Contains(content, "test.event") || !strings.Contains(content, `"level":"info"`) {
 		t.Fatalf("unexpected file content: %s", b)
+	}
+	if !strings.Contains(content, "llm.cancelled") || !strings.Contains(content, `"partial_chars":12`) {
+		t.Fatalf("missing cancelled log content: %s", content)
 	}
 }

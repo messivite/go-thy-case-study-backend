@@ -15,6 +15,7 @@ func TestLLMErrorCode(t *testing.T) {
 		{ErrProviderTimeout, "timeout"},
 		{ErrProviderAuthFailed, "auth_failed"},
 		{ErrProviderBadRequest, "bad_request"},
+		{ErrUserCancelled, "user_cancelled"},
 		{errors.New("something else"), "unknown"},
 	}
 	for _, tt := range tests {
