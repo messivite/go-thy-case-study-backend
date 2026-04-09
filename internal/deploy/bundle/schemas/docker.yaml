@@ -1,0 +1,23 @@
+id: docker
+displayName: Docker (Local/Remote)
+description: Dockerfile + docker-compose.yml ile yerelde calisir; ayni image registry'e push edilip uzakta da kullanilabilir.
+defaults:
+  port: "8082"
+  main_package: "./cmd/api"
+  health_path: "/health"
+  module: github.com/messivite/go-thy-case-study-backend
+files:
+  - template: railway/Dockerfile.tmpl
+    output: Dockerfile
+  - template: docker/docker-compose.yml.tmpl
+    output: docker-compose.yml
+  - template: docker/dockerignore.tmpl
+    output: .dockerignore
+notes: |
+  Local calistirma:
+    1) docker compose up --build
+    2) API: http://localhost:8082/api (veya --port ile verdigin deger)
+  Uzak deploy:
+    1) docker build -t <registry>/<image>:<tag> .
+    2) docker push <registry>/<image>:<tag>
+    3) Platformda (ECS/Render/Railway/Fly) bu image'i calistir.

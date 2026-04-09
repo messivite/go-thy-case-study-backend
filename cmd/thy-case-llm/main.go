@@ -657,7 +657,7 @@ Komutlar:
   templates list                Mevcut provider template'lerini listele
   templates show <name>         Template detayını göster
   doctor                        Hızlı sistem sağlık kontrolü
-  deploy list                   Deploy hedeflerini listele (railway, fly, vercel, …)
+  deploy list                   Deploy hedeflerini listele (railway, fly, docker, vercel, …)
   deploy show <id>              Bir hedefin açıklaması ve üreteceği dosyalar
   deploy init <id> [flags]      Şablon dosyalarını repoya yazar (Dockerfile, fly.toml, …)
   version                       Sürüm bilgisi
@@ -670,7 +670,7 @@ func printDeployUsage() {
   thy-case-llm deploy show <id>
   thy-case-llm deploy init <id> [flags]
 
-id: railway | fly | vercel (thy-case-llm deploy list)
+id: railway | fly | docker | vercel (thy-case-llm deploy list)
 
 init flags:
   --out <dir>           Çıktı kökü (varsayılan: .)

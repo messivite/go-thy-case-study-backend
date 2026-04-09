@@ -23,6 +23,9 @@
   <a href="https://app.codecov.io/gh/messivite/go-thy-case-study-backend">
     <img src="https://img.shields.io/codecov/c/github/messivite/go-thy-case-study-backend?style=for-the-badge&label=Coverage" alt="Coverage" />
   </a>
+  <a href="https://hub.docker.com/r/messivite47/thy-case-study-backend">
+    <img src="https://img.shields.io/badge/Docker%20Hub-messivite47%2Fthy--case--study--backend-2496ED?logo=docker&logoColor=white&style=for-the-badge" alt="Docker Hub: messivite47/thy-case-study-backend" />
+  </a>
 </p>
 
 # THY için Case Study Kapsamında Hazırlanan Backend Side Go Projesi
@@ -32,9 +35,9 @@
 | PROD Base URL | Canlı ortam ana adresi (apisiz) | [http://go-thy-case-study-backend-production.up.railway.app/](http://go-thy-case-study-backend-production.up.railway.app/) |
 | PROD API URL | Canlı ortam API adresi (`/api`) | [http://go-thy-case-study-backend-production.up.railway.app/api](http://go-thy-case-study-backend-production.up.railway.app/api) |
 | PROD Swagger UI | Canlı ortamda API dokümantasyonu ve endpoint deneme ekranı | [http://go-thy-case-study-backend-production.up.railway.app/docs-thy-case-study-backend](http://go-thy-case-study-backend-production.up.railway.app/docs-thy-case-study-backend) |
-| DEV Base URL | Lokal geliştirme ortamı ana adresi (apisiz) | [http://localhost:8081/](http://localhost:8081/) |
-| DEV API URL | Lokal geliştirme API adresi (`/api`) | [http://localhost:8081/api](http://localhost:8081/api) |
-| DEV Swagger UI | Lokal ortamda API dokümantasyonu ve endpoint test ekranı | [http://localhost:8081/docs-thy-case-study-backend](http://localhost:8081/docs-thy-case-study-backend) |
+| DEV Base URL | Lokal geliştirme ortamı ana adresi (apisiz) | [http://localhost:8082/](http://localhost:8082/) |
+| DEV API URL | Lokal geliştirme API adresi (`/api`) | [http://localhost:8082/api](http://localhost:8082/api) |
+| DEV Swagger UI | Lokal ortamda API dokümantasyonu ve endpoint test ekranı | [http://localhost:8082/docs-thy-case-study-backend](http://localhost:8082/docs-thy-case-study-backend) |
 
 Supabase tabanlı kimlik doğrulama ve rol yönetimi kullanan, LLM sohbet akışlarını destekleyen Go backend uygulaması.
 
@@ -208,7 +211,7 @@ go run ./cmd/thy-case-llm doctor
 
 `.env.example` içindeki temel değişkenler:
 
-- `PORT` (varsayılan `8081`)
+- `PORT` (varsayılan `8082`; `cmd/server` ve Docker örnekleri ile uyumlu)
 - `CHAT_PERSISTENCE` (`supabase` veya `memory`)
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
@@ -292,7 +295,7 @@ Notlar:
 Uygulama çalışırken OpenAPI 3.1 tabanlı interaktif API dokümantasyonuna erişebilirsiniz:
 
 ```
-http://localhost:8081/docs-thy-case-study-backend
+http://localhost:8082/docs-thy-case-study-backend
 ```
 
 Bu endpoint auth gerektirmez. Path, `SWAGGER_PUBLIC_PATH` env değişkeniyle değiştirilebilir.
@@ -464,8 +467,10 @@ CLI v0.3.0+ ile deploy şablonları üretilir:
 ```bash
 thy-case-llm deploy list
 thy-case-llm deploy show railway
+thy-case-llm deploy show docker
 thy-case-llm deploy init railway --dry-run
 thy-case-llm deploy init railway
+thy-case-llm deploy init docker
 ```
 
 Desteklenen hedefler:
@@ -474,6 +479,73 @@ Desteklenen hedefler:
 |---|---|---|
 | `railway` | `Dockerfile`, `railway.toml` | Varsayılan health path `/health` |
 | `fly` | `Dockerfile`, `fly.toml` | Benzer Docker tabanlı kurulum |
+| `docker` | `Dockerfile`, `docker-compose.yml`, `.dockerignore` | Yerel Docker/Compose çalıştırma ve registry image hazırlığı |
 | `vercel` | `vercel.json`, `deploy/VERCEL.md` | Rewrite temelli yonlendirme senaryosu |
 
 Yaygin flag'ler: `--dry-run`, `--force`, `--out`, `--port`, `--main-package`, `--health-path`, `--api-base-url`, `--module`.
+
+### Docker ile Çalıştırma
+
+Bu repo Docker ile **yerelde** doğrudan ayağa kalkabilir; bunun için image'ı bir yere push etmen gerekmez.
+
+```bash
+docker compose up --build
+```
+
+API:
+
+```text
+http://localhost:8082/api
+```
+
+Sadece image üretmek için:
+
+```bash
+docker build -t thy-case-study-backend:local .
+docker run --rm -p 8082:8082 --env-file .env thy-case-study-backend:local
+```
+
+### Docker Hub (public image)
+
+İmaj sayfası: [messivite47/thy-case-study-backend](https://hub.docker.com/r/messivite47/thy-case-study-backend)
+
+Hub’dan çekmek:
+
+```bash
+docker pull messivite47/thy-case-study-backend:latest
+```
+
+Çalıştırmak (örnek; `.env` veya ortam değişkenlerini kendi ortamına göre ver):
+
+```bash
+docker run --rm -p 8082:8082 --env-file .env messivite47/thy-case-study-backend:latest
+```
+
+İmajı güncelleyip Hub’a göndermek (`tagname` yerine sürüm veya `latest`):
+
+```bash
+docker login
+docker tag thy-case-study-backend:local messivite47/thy-case-study-backend:tagname
+docker push messivite47/thy-case-study-backend:tagname
+```
+
+Uzak bir platforma (ECS/Render/Railway/Fly) kendi registry tag’in ile çıkmak istersen aynı kalıbı kullan: `docker build -t <registry>/<image>:<tag> .` ve `docker push <registry>/<image>:<tag>`.
+
+### Deploy: `docker` hedefi ne işe yarar?
+
+`thy-case-llm deploy init docker` komutu, repoya **üretime uygun Docker dosyalarını** yazar veya günceller (şablonlar `internal/deploy/bundle` altında). Temel fikir:
+
+| Dosya | Rolü |
+| --- | --- |
+| `Dockerfile` | Go binary’yi çok aşamalı build edip küçük bir Linux imajında çalıştırır. |
+| `docker-compose.yml` | Yerelde tek komutla (`docker compose up`) API’yi ayağa kaldırır; port ve `PORT` env ile uyumludur. |
+| `.dockerignore` | Gereksiz dosyaların imaja girmesini azaltır; build daha hızlı ve imaj daha küçük olur. |
+
+**Yerel:** `docker compose up --build` — push gerekmez, `http://localhost:8082` üzerinden erişirsin.  
+**Uzak:** Aynı `Dockerfile` ile `docker build` + registry’ye `docker push`; platform (Railway, Fly, ECS, vb.) bu image’i çalıştırır.
+
+<p align="center">
+  <a href="https://hub.docker.com/r/messivite47/thy-case-study-backend" title="Docker Hub: messivite47/thy-case-study-backend">
+    <img src="https://cdn.simpleicons.org/docker/2496ED" alt="Docker Hub" width="56" height="56" />
+  </a>
+</p>
