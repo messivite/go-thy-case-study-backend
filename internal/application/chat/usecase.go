@@ -13,6 +13,12 @@ import (
 type StreamFinalize func(assistantContent string) (domain.ChatMessage, error)
 type StreamCancel func(partialChars int)
 
+type SyncResult struct {
+	SyncedMessages   []domain.ChatMessage
+	AssistantMessage domain.ChatMessage
+	Usage            map[string]any
+}
+
 type UseCase struct {
 	repo      domain.Repository
 	quotaRepo domain.QuotaRepository
@@ -188,6 +194,102 @@ func (uc *UseCase) SendMessage(
 	uc.auditUsage(ctx, userMsg.ID.String(), usage)
 
 	return assistant, resp.Usage, nil
+}
+
+func (uc *UseCase) SyncMessages(
+	ctx context.Context,
+	userID, chatID, providerName, model string,
+	pending []domain.BatchMessage,
+) (SyncResult, error) {
+	if len(pending) == 0 {
+		return SyncResult{}, domain.ErrMissingContent
+	}
+
+	session, err := uc.repo.GetChatSessionByID(ctx, chatID)
+	if err != nil {
+		return SyncResult{}, err
+	}
+	if session.UserID != userID {
+		return SyncResult{}, domain.ErrUnauthorized
+	}
+
+	if err := uc.checkQuota(ctx, userID); err != nil {
+		return SyncResult{}, err
+	}
+
+	p, err := uc.registry.Get(providerName)
+	if err != nil {
+		return SyncResult{}, err
+	}
+	resolvedProvider := p.Name()
+	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, "")
+
+	prepared := make([]domain.BatchMessage, 0, len(pending))
+	for _, msg := range pending {
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		prepared = append(prepared, domain.BatchMessage{
+			Content:  content,
+			Provider: resolvedProvider,
+			Model:    effModel,
+		})
+	}
+	if len(prepared) == 0 {
+		return SyncResult{}, domain.ErrMissingContent
+	}
+
+	savedUsers, err := uc.repo.SaveMessages(ctx, chatID, userID, prepared)
+	if err != nil {
+		return SyncResult{}, err
+	}
+
+	history, err := uc.repo.GetMessagesBySession(ctx, chatID)
+	if err != nil {
+		return SyncResult{}, err
+	}
+
+	observability.LLMRequest(resolvedProvider, model, userID, chatID)
+	start := time.Now()
+	resp, llmErr := p.Complete(ctx, domain.ProviderRequest{
+		Provider: resolvedProvider,
+		Model:    model,
+		Messages: history,
+	})
+	if llmErr != nil {
+		observability.LLMError(resolvedProvider, model, llmErr)
+		if len(savedUsers) > 0 {
+			uc.auditFail(ctx, savedUsers[len(savedUsers)-1].ID.String(), llmErr)
+		}
+		return SyncResult{}, llmErr
+	}
+
+	usage := domain.NormalizeUsage(resp.Usage)
+	observability.LLMResponse(resolvedProvider, usage.Model, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens, time.Since(start).Milliseconds())
+	if usage.Model != "" {
+		effModel = usage.Model
+	}
+
+	assistant, err := uc.repo.SaveMessage(ctx, chatID, "", domain.RoleAssistant, resp.Content, resolvedProvider, effModel)
+	if err != nil {
+		if len(savedUsers) > 0 {
+			uc.auditFail(ctx, savedUsers[len(savedUsers)-1].ID.String(), err)
+		}
+		return SyncResult{}, err
+	}
+	if err := uc.repo.UpdateSessionLastLLM(ctx, chatID, resolvedProvider, effModel); err != nil {
+		observability.Info("session.last_llm.update_failed", map[string]any{"session_id": chatID, "err": err.Error()})
+	}
+	if len(savedUsers) > 0 {
+		uc.auditUsage(ctx, savedUsers[len(savedUsers)-1].ID.String(), usage)
+	}
+
+	return SyncResult{
+		SyncedMessages:   savedUsers,
+		AssistantMessage: assistant,
+		Usage:            resp.Usage,
+	}, nil
 }
 
 func (uc *UseCase) StreamMessage(

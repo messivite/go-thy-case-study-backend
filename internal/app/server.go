@@ -52,6 +52,7 @@ func NewServer(authService auth.AuthService, chatHandler *chat.Handler, cfg Serv
 			r.Get("/chats", chatHandler.ListSessions)
 			r.Get("/chats/{chatID}", chatHandler.GetChat)
 			r.Post("/chats/{chatID}/messages", chatHandler.PostMessage)
+			r.Post("/chats/{chatID}/sync", chatHandler.SyncMessages)
 			r.Post("/chats/{chatID}/stream", chatHandler.StreamMessage)
 		})
 	})
