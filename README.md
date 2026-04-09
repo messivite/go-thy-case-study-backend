@@ -33,7 +33,7 @@ Supabase tabanlı kimlik doğrulama ve rol yönetimi kullanan, LLM sohbet akış
 
 ## Built With gosupabase
 
-Bu proje, tarafımdan geliştirilen `gosupabase` kütüphanesi üzerine kuruludur. YAML tabanlı endpoint tanımları, JWT validate ve role-based access control (RBAC) katmanı `gosupabase` ile sağlanır ve yönetilir. Supabase ile yeteneleri çoğu fonksiyonu için tam uyumludur.
+Bu proje, tarafımdan geliştirilen `gosupabase` kütüphanesi üzerine kuruludur. YAML tabanlı endpoint tanımları, JWT validate ve role-based access control (RBAC) katmanı `gosupabase` ile sağlanır ve yönetilir. Supabase ile yetenekleri çoğu fonksiyonu için tam uyumludur.
 
 
 - GitHub: [github.com/messivite/gosupabase](https://github.com/messivite/gosupabase)
