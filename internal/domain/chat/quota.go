@@ -21,5 +21,6 @@ type QuotaRepository interface {
 	GetUserQuota(ctx context.Context, userID string) (UserQuota, error)
 	GetUserTokenUsage(ctx context.Context, userID string) (UserTokenUsage, error)
 	FailPendingLog(ctx context.Context, userMessageID, errorSummary, errorCode string, httpStatus int) error
+	CancelPendingLog(ctx context.Context, userMessageID string) error
 	SetUsageLog(ctx context.Context, userMessageID string, prompt, completion, total int) error
 }

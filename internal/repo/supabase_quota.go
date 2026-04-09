@@ -68,6 +68,17 @@ func (r *SupabaseRepository) FailPendingLog(ctx context.Context, userMessageID, 
 	return nil
 }
 
+// CancelPendingLog calls llm_cancel_pending_for_user_message RPC.
+func (r *SupabaseRepository) CancelPendingLog(ctx context.Context, userMessageID string) error {
+	body := map[string]any{
+		"p_user_message_id": userMessageID,
+	}
+	if err := r.doRequest(ctx, http.MethodPost, "/rpc/llm_cancel_pending_for_user_message", body, nil); err != nil {
+		return fmt.Errorf("cancel pending log: %w", err)
+	}
+	return nil
+}
+
 // SetUsageLog calls llm_set_usage_for_user_message RPC.
 func (r *SupabaseRepository) SetUsageLog(ctx context.Context, userMessageID string, prompt, completion, total int) error {
 	body := map[string]any{

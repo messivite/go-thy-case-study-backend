@@ -15,6 +15,8 @@ func LLMErrorCode(err error) string {
 		return "auth_failed"
 	case errors.Is(err, ErrProviderBadRequest):
 		return "bad_request"
+	case errors.Is(err, ErrUserCancelled):
+		return "user_cancelled"
 	default:
 		return "unknown"
 	}

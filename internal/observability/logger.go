@@ -92,6 +92,16 @@ func LLMError(provider, model string, err error) {
 	})
 }
 
+func LLMCancelled(provider, model, userID, sessionID string, partialChars int) {
+	Info("llm.cancelled", map[string]any{
+		"provider":      provider,
+		"model":         model,
+		"user_id":       userID,
+		"session_id":    sessionID,
+		"partial_chars": partialChars,
+	})
+}
+
 func emit(level, event string, fields map[string]any, errMsg string) {
 	entry := LogEntry{
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),

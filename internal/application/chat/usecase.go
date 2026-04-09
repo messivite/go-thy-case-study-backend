@@ -11,6 +11,7 @@ import (
 )
 
 type StreamFinalize func(assistantContent string) (domain.ChatMessage, error)
+type StreamCancel func(partialChars int)
 
 type UseCase struct {
 	repo      domain.Repository
@@ -159,6 +160,11 @@ func (uc *UseCase) SendMessage(
 		Messages: history,
 	})
 	if llmErr != nil {
+		if ctx.Err() == context.Canceled {
+			observability.LLMCancelled(resolvedProvider, model, userID, chatID, 0)
+			uc.auditCancel(userMsg.ID.String())
+			return domain.ChatMessage{}, nil, domain.ErrUserCancelled
+		}
 		observability.LLMError(resolvedProvider, model, llmErr)
 		uc.auditFail(ctx, userMsg.ID.String(), llmErr)
 		return domain.ChatMessage{}, nil, llmErr
@@ -188,7 +194,7 @@ func (uc *UseCase) StreamMessage(
 	ctx context.Context,
 	userID, chatID, providerName, model, content string,
 	messages []domain.ChatMessage,
-) (<-chan domain.StreamEvent, map[string]any, StreamFinalize, error) {
+) (<-chan domain.StreamEvent, map[string]any, StreamFinalize, StreamCancel, error) {
 	prompt := strings.TrimSpace(content)
 	if prompt == "" {
 		for i := len(messages) - 1; i >= 0; i-- {
@@ -199,24 +205,24 @@ func (uc *UseCase) StreamMessage(
 		}
 	}
 	if prompt == "" {
-		return nil, nil, nil, domain.ErrMissingContent
+		return nil, nil, nil, nil, domain.ErrMissingContent
 	}
 
 	session, err := uc.repo.GetChatSessionByID(ctx, chatID)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	if session.UserID != userID {
-		return nil, nil, nil, domain.ErrUnauthorized
+		return nil, nil, nil, nil, domain.ErrUnauthorized
 	}
 
 	if err := uc.checkQuota(ctx, userID); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	p, err := uc.registry.Get(providerName)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	resolvedProvider := p.Name()
 	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, "")
@@ -224,7 +230,7 @@ func (uc *UseCase) StreamMessage(
 	// Save user message before stream so trigger creates pending audit row.
 	userMsg, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, prompt, resolvedProvider, effModel)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	observability.LLMRequest(resolvedProvider, model, userID, chatID)
@@ -240,7 +246,7 @@ func (uc *UseCase) StreamMessage(
 	if err != nil {
 		observability.LLMError(resolvedProvider, model, err)
 		uc.auditFail(ctx, userMsg.ID.String(), err)
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	usageMeta := map[string]any{
@@ -266,8 +272,12 @@ func (uc *UseCase) StreamMessage(
 		}
 		return msg, nil
 	}
+	cancel := func(partialChars int) {
+		observability.LLMCancelled(resolvedProvider, effModel, userID, chatID, partialChars)
+		uc.auditCancel(userMsgID)
+	}
 
-	return events, usageMeta, finalize, nil
+	return events, usageMeta, finalize, cancel, nil
 }
 
 // auditFail records an LLM failure in llm_interaction_log via RPC.
@@ -280,6 +290,15 @@ func (uc *UseCase) auditFail(ctx context.Context, userMessageID string, llmErr e
 	}
 	if err := uc.quotaRepo.FailPendingLog(ctx, userMessageID, summary, code, status); err != nil {
 		observability.Warn("audit.fail_pending_rpc", map[string]any{"user_message_id": userMessageID, "err": err.Error()})
+	}
+}
+
+// auditCancel marks the pending interaction log as cancelled.
+func (uc *UseCase) auditCancel(userMessageID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := uc.quotaRepo.CancelPendingLog(ctx, userMessageID); err != nil {
+		observability.Warn("audit.cancel_pending_rpc", map[string]any{"user_message_id": userMessageID, "err": err.Error()})
 	}
 }
 
