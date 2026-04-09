@@ -29,10 +29,12 @@
 
 | Ad | Açıklama | Link |
 |---|---|---|
-| PROD API Base URL | Canlı ortamda backend API istekleri için temel adres | [http://go-thy-case-study-backend-production.up.railway.app/](http://go-thy-case-study-backend-production.up.railway.app/) |
-| PROD Swagger UI | Canlı ortamda API dokümantasyonu ve endpoint deneme ekranı | [http://go-thy-case-study-backend-production.up.railway.app/docs-a7b3c9e2f1d4](http://go-thy-case-study-backend-production.up.railway.app/docs-a7b3c9e2f1d4) |
-| DEV API Base URL | Lokal geliştirme ortamında API istekleri için temel adres | [http://localhost:8081/](http://localhost:8081/) |
-| DEV Swagger UI | Lokal ortamda API dokümantasyonu ve endpoint test ekranı | [http://localhost:8081/docs-a7b3c9e2f1d4](http://localhost:8081/docs-a7b3c9e2f1d4) |
+| PROD Base URL | Canlı ortam ana adresi (apisiz) | [http://go-thy-case-study-backend-production.up.railway.app/](http://go-thy-case-study-backend-production.up.railway.app/) |
+| PROD API URL | Canlı ortam API adresi (`/api`) | [http://go-thy-case-study-backend-production.up.railway.app/api](http://go-thy-case-study-backend-production.up.railway.app/api) |
+| PROD Swagger UI | Canlı ortamda API dokümantasyonu ve endpoint deneme ekranı | [http://go-thy-case-study-backend-production.up.railway.app/docs-thy-case-study-backend](http://go-thy-case-study-backend-production.up.railway.app/docs-thy-case-study-backend) |
+| DEV Base URL | Lokal geliştirme ortamı ana adresi (apisiz) | [http://localhost:8081/](http://localhost:8081/) |
+| DEV API URL | Lokal geliştirme API adresi (`/api`) | [http://localhost:8081/api](http://localhost:8081/api) |
+| DEV Swagger UI | Lokal ortamda API dokümantasyonu ve endpoint test ekranı | [http://localhost:8081/docs-thy-case-study-backend](http://localhost:8081/docs-thy-case-study-backend) |
 
 Supabase tabanlı kimlik doğrulama ve rol yönetimi kullanan, LLM sohbet akışlarını destekleyen Go backend uygulaması.
 
@@ -174,7 +176,7 @@ thy-case-llm doctor
 - `PROVIDERS_CONFIG` (varsayılan `providers.yaml`)
 - `OBSERVABILITY_LOG_FILE` (opsiyonel)
 - `OTEL_EXPORTER_OTLP_ENDPOINT` (opsiyonel)
-- `SWAGGER_PUBLIC_PATH` (varsayilan `/docs-a7b3c9e2f1d4`)
+- `SWAGGER_PUBLIC_PATH` (varsayilan `/docs-thy-case-study-backend`)
 
 ### CHAT_PERSISTENCE
 
@@ -208,7 +210,7 @@ Bu repoda minimal HTTP trace entegrasyonu vardır. `OTEL_EXPORTER_OTLP_ENDPOINT`
 Uygulama çalışırken OpenAPI 3.1 tabanlı interaktif API dokümantasyonuna erişebilirsiniz:
 
 ```
-http://localhost:8081/docs-a7b3c9e2f1d4
+http://localhost:8081/docs-thy-case-study-backend
 ```
 
 Bu endpoint auth gerektirmez. Path, `SWAGGER_PUBLIC_PATH` env değişkeniyle değiştirilebilir.

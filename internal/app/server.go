@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/messivite/go-thy-case-study-backend/internal/auth"
 	"github.com/messivite/go-thy-case-study-backend/internal/chat"
+	"github.com/messivite/go-thy-case-study-backend/internal/landing"
 	"github.com/messivite/go-thy-case-study-backend/internal/swagger"
 )
 
@@ -29,6 +30,7 @@ func NewServer(authService auth.AuthService, chatHandler *chat.Handler, cfg Serv
 		_, _ = w.Write([]byte("OK"))
 	}
 
+	r.Get("/", landing.Handler())
 	r.Get("/health", health)
 
 	if path := strings.TrimRight(cfg.DocsPath, "/"); path != "" {
