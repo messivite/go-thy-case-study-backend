@@ -2,18 +2,24 @@ package app
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/messivite/go-thy-case-study-backend/internal/auth"
 	"github.com/messivite/go-thy-case-study-backend/internal/chat"
+	"github.com/messivite/go-thy-case-study-backend/internal/swagger"
 )
+
+type ServerConfig struct {
+	DocsPath string // e.g. "/docs-a7b3c9e2f1d4"; empty disables docs
+}
 
 type Server struct {
 	router http.Handler
 }
 
-func NewServer(authService auth.AuthService, chatHandler *chat.Handler) *Server {
+func NewServer(authService auth.AuthService, chatHandler *chat.Handler, cfg ServerConfig) *Server {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -23,11 +29,13 @@ func NewServer(authService auth.AuthService, chatHandler *chat.Handler) *Server 
 		_, _ = w.Write([]byte("OK"))
 	}
 
-	// Kök: Dockerfile / Railway / curl …:8081/health
 	r.Get("/health", health)
 
+	if path := strings.TrimRight(cfg.DocsPath, "/"); path != "" {
+		r.Mount(path, http.StripPrefix(path, swagger.Handler(path)))
+	}
+
 	r.Route("/api", func(r chi.Router) {
-		// basePath /api + /health (Postman vb.) — JWT yok; auth sadece alt grupta
 		r.Get("/health", health)
 
 		r.Group(func(r chi.Router) {

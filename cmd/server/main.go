@@ -82,7 +82,14 @@ func main() {
 	uc := usecase.NewUseCase(repository, quotaRepo, registry)
 	chatHandler := chat.NewHandler(uc)
 
-	server := app.NewServer(authService, chatHandler)
+	docsPath := os.Getenv("SWAGGER_PUBLIC_PATH")
+	if docsPath == "" {
+		docsPath = "/docs-a7b3c9e2f1d4"
+	}
+	serverCfg := app.ServerConfig{DocsPath: docsPath}
+	log.Printf("swagger docs: http://localhost:%s%s", port, docsPath)
+
+	server := app.NewServer(authService, chatHandler, serverCfg)
 	handler := observability.HTTPHandler("thy-api", server.Handler())
 
 	addr := fmt.Sprintf(":%s", port)

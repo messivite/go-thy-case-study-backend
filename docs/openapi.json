@@ -2,12 +2,10 @@
   "components": {
     "parameters": {
       "chatID": {
-        "description": "Sohbet oturum UUID'si",
         "in": "path",
         "name": "chatID",
         "required": true,
         "schema": {
-          "example": "71d4acc8-deb2-401c-a293-337c151b9ac1",
           "format": "uuid",
           "type": "string"
         }
@@ -17,12 +15,6 @@
       "BadRequest": {
         "content": {
           "application/json": {
-            "example": {
-              "error": {
-                "code": "bad_request",
-                "message": "Invalid request payload"
-              }
-            },
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
             }
@@ -33,12 +25,6 @@
       "NotFound": {
         "content": {
           "application/json": {
-            "example": {
-              "error": {
-                "code": "not_found",
-                "message": "session not found"
-              }
-            },
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
             }
@@ -49,35 +35,6 @@
       "ProviderError": {
         "content": {
           "application/json": {
-            "examples": {
-              "authFailed": {
-                "summary": "Provider auth hatasi",
-                "value": {
-                  "error": {
-                    "code": "provider_auth_failed",
-                    "message": "Provider authentication failed"
-                  }
-                }
-              },
-              "rateLimited": {
-                "summary": "Provider rate limit",
-                "value": {
-                  "error": {
-                    "code": "provider_rate_limited",
-                    "message": "Provider rate limit exceeded"
-                  }
-                }
-              },
-              "unavailable": {
-                "summary": "Provider erisilemez",
-                "value": {
-                  "error": {
-                    "code": "provider_unavailable",
-                    "message": "Provider temporarily unavailable"
-                  }
-                }
-              }
-            },
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
             }
@@ -88,12 +45,6 @@
       "ProviderTimeout": {
         "content": {
           "application/json": {
-            "example": {
-              "error": {
-                "code": "provider_timeout",
-                "message": "Provider request timed out"
-              }
-            },
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
             }
@@ -104,26 +55,6 @@
       "QuotaExceeded": {
         "content": {
           "application/json": {
-            "examples": {
-              "daily": {
-                "summary": "Gunluk kota asimi",
-                "value": {
-                  "error": {
-                    "code": "llm_quota_daily_exceeded",
-                    "message": "Daily token quota exceeded"
-                  }
-                }
-              },
-              "weekly": {
-                "summary": "Haftalik kota asimi",
-                "value": {
-                  "error": {
-                    "code": "llm_quota_weekly_exceeded",
-                    "message": "Weekly token quota exceeded"
-                  }
-                }
-              }
-            },
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
             }
@@ -134,12 +65,6 @@
       "Unauthorized": {
         "content": {
           "application/json": {
-            "example": {
-              "error": {
-                "code": "unauthorized",
-                "message": "Unauthorized"
-              }
-            },
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
             }
@@ -156,24 +81,6 @@
           },
           "usage": {
             "additionalProperties": true,
-            "description": "Provider'dan donen token kullanim bilgisi",
-            "properties": {
-              "completion_tokens": {
-                "type": "integer"
-              },
-              "model": {
-                "type": "string"
-              },
-              "prompt_tokens": {
-                "type": "integer"
-              },
-              "provider": {
-                "type": "string"
-              },
-              "total_tokens": {
-                "type": "integer"
-              }
-            },
             "type": "object"
           }
         },
@@ -277,11 +184,9 @@
             "type": "string"
           },
           "model": {
-            "description": "Asistan mesajlarinda model bilgisi",
             "type": "string"
           },
           "provider": {
-            "description": "Asistan mesajlarinda provider bilgisi",
             "type": "string"
           },
           "role": {
@@ -302,15 +207,12 @@
       "CreateSessionRequest": {
         "properties": {
           "model": {
-            "description": "Opsiyonel model override",
             "type": "string"
           },
           "provider": {
-            "description": "Opsiyonel provider override",
             "type": "string"
           },
           "title": {
-            "description": "Sohbet basligi",
             "type": "string"
           }
         },
@@ -339,11 +241,9 @@
       "ErrorBody": {
         "properties": {
           "code": {
-            "description": "Makine okunur hata kodu",
             "type": "string"
           },
           "message": {
-            "description": "Insana yonelik hata mesaji",
             "type": "string"
           }
         },
@@ -367,7 +267,6 @@
       "ListProvidersResponse": {
         "properties": {
           "default": {
-            "description": "Varsayilan provider adi",
             "type": "string"
           },
           "providers": {
@@ -386,22 +285,18 @@
       "PostMessageRequest": {
         "properties": {
           "content": {
-            "description": "Tek mesaj icerigi",
             "type": "string"
           },
           "messages": {
-            "description": "Alternatif mesaj gecmisi formati",
             "items": {
               "$ref": "#/components/schemas/ChatMessage"
             },
             "type": "array"
           },
           "model": {
-            "description": "Opsiyonel model override",
             "type": "string"
           },
           "provider": {
-            "description": "Opsiyonel provider override",
             "type": "string"
           }
         },
@@ -413,7 +308,6 @@
             "type": "boolean"
           },
           "model": {
-            "description": "Varsayilan model",
             "type": "string"
           },
           "name": {
@@ -438,10 +332,6 @@
     }
   },
   "info": {
-    "contact": {
-      "name": "Mustafa Aksoy",
-      "url": "https://github.com/messivite/go-thy-case-study-backend"
-    },
     "description": "LLM sohbet backend servisi.\nSupabase tabanli kimlik dogrulama, coklu LLM provider destegi,\ntoken kota yonetimi ve etklesim audit loglama icerir.\n",
     "title": "THY Case Study Backend API",
     "version": "1.0.0"
@@ -450,7 +340,6 @@
   "paths": {
     "/chats": {
       "get": {
-        "description": "Kullanicinin tum sohbet oturumlarini listeler.",
         "operationId": "listSessions",
         "responses": {
           "200": {
@@ -476,16 +365,10 @@
         ]
       },
       "post": {
-        "description": "Yeni bir chat session olusturur. Opsiyonel olarak provider\nve model belirtilebilir; belirtilmezse providers.yaml\nvarsayilanlari kullanilir.\n",
         "operationId": "createSession",
         "requestBody": {
           "content": {
             "application/json": {
-              "example": {
-                "model": "gpt-4.1-mini",
-                "provider": "openai",
-                "title": "Test sohbet"
-              },
               "schema": {
                 "$ref": "#/components/schemas/CreateSessionRequest"
               }
@@ -497,11 +380,6 @@
           "201": {
             "content": {
               "application/json": {
-                "example": {
-                  "id": "71d4acc8-deb2-401c-a293-337c151b9ac1",
-                  "model": "gpt-4.1-mini",
-                  "provider": "openai"
-                },
                 "schema": {
                   "$ref": "#/components/schemas/CreateSessionResponse"
                 }
@@ -524,7 +402,6 @@
     },
     "/chats/{chatID}": {
       "get": {
-        "description": "Oturum bilgisi ve tum mesajlari doner.",
         "operationId": "getChat",
         "parameters": [
           {
@@ -557,7 +434,6 @@
     },
     "/chats/{chatID}/messages": {
       "post": {
-        "description": "Kullanici mesajini LLM'e gonderir ve yaniti senkron doner.\nOpsiyonel provider/model override destekler.\n",
         "operationId": "postMessage",
         "parameters": [
           {
@@ -567,34 +443,6 @@
         "requestBody": {
           "content": {
             "application/json": {
-              "examples": {
-                "simple": {
-                  "summary": "Tek mesaj",
-                  "value": {
-                    "content": "Merhaba, nasilsin?"
-                  }
-                },
-                "withHistory": {
-                  "summary": "Mesaj gecmisi ile",
-                  "value": {
-                    "messages": [
-                      {
-                        "content": "Merhaba",
-                        "role": "user"
-                      }
-                    ],
-                    "provider": "openai"
-                  }
-                },
-                "withOverride": {
-                  "summary": "Provider override",
-                  "value": {
-                    "content": "Merhaba",
-                    "model": "gemini-2.5-flash",
-                    "provider": "gemini"
-                  }
-                }
-              },
               "schema": {
                 "$ref": "#/components/schemas/PostMessageRequest"
               }
@@ -606,21 +454,6 @@
           "201": {
             "content": {
               "application/json": {
-                "example": {
-                  "assistantMessage": {
-                    "content": "Merhaba! Size nasil yardimci olabilirim?",
-                    "model": "gpt-4.1-mini-2025-04-14",
-                    "provider": "openai",
-                    "role": "assistant"
-                  },
-                  "usage": {
-                    "completion_tokens": 38,
-                    "model": "gpt-4.1-mini-2025-04-14",
-                    "prompt_tokens": 16,
-                    "provider": "openai",
-                    "total_tokens": 54
-                  }
-                },
                 "schema": {
                   "$ref": "#/components/schemas/AssistantResponse"
                 }
@@ -655,7 +488,6 @@
     },
     "/chats/{chatID}/stream": {
       "post": {
-        "description": "Kullanici mesajini LLM'e gonderir ve yaniti Server-Sent Events\nile parca parca doner. Istek govdesi non-stream ile aynidir.\n\nSSE event tipleri:\n- `meta`: provider/model bilgisi ve usage\n- `delta`: metin parcasi\n- `done`: stream tamamlandi\n- `error`: hata olustu\n",
         "operationId": "streamMessage",
         "parameters": [
           {
@@ -665,9 +497,6 @@
         "requestBody": {
           "content": {
             "application/json": {
-              "example": {
-                "content": "Kisa bir selamlama yaz"
-              },
               "schema": {
                 "$ref": "#/components/schemas/PostMessageRequest"
               }
@@ -680,7 +509,6 @@
             "content": {
               "text/event-stream": {
                 "schema": {
-                  "description": "SSE formati: `data: {\"type\":\"delta\",\"delta\":\"...\"}\\n\\n`\n",
                   "type": "string"
                 }
               }
@@ -714,7 +542,6 @@
     },
     "/health": {
       "get": {
-        "description": "Servisin ayakta olup olmadigini kontrol eder.",
         "operationId": "health",
         "responses": {
           "200": {
@@ -738,17 +565,11 @@
     },
     "/me": {
       "get": {
-        "description": "JWT icindeki kullanici bilgilerini doner.",
         "operationId": "getMe",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "example": {
-                  "Email": "user@example.com",
-                  "Role": "authenticated",
-                  "UserID": "d13456f1-5289-472e-a8d5-7256c8d33570"
-                },
                 "schema": {
                   "$ref": "#/components/schemas/AuthenticatedUser"
                 }
@@ -768,27 +589,11 @@
     },
     "/providers": {
       "get": {
-        "description": "Kayitli ve aktif provider'lari varsayilan bilgisiyle doner.",
         "operationId": "listProviders",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "example": {
-                  "default": "openai",
-                  "providers": [
-                    {
-                      "enabled": true,
-                      "model": "gpt-4.1-mini",
-                      "name": "openai"
-                    },
-                    {
-                      "enabled": true,
-                      "model": "gemini-2.5-flash",
-                      "name": "gemini"
-                    }
-                  ]
-                },
                 "schema": {
                   "$ref": "#/components/schemas/ListProvidersResponse"
                 }

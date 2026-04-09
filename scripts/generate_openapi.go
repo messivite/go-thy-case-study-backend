@@ -1,49 +1,155 @@
-openapi: "3.1.0"
-info:
-  title: THY Case Study Backend API
-  description: |
-    LLM sohbet backend servisi.
-    Supabase tabanli kimlik dogrulama, coklu LLM provider destegi,
-    token kota yonetimi ve etklesim audit loglama icerir.
-  version: "1.0.0"
-servers:
-  - url: /api
-    description: Default API base path
-security:
-  - bearerAuth: []
-tags:
-  - name: health
-    description: Sistem saglik kontrolu
-  - name: auth
-    description: Kimlik dogrulama
-  - name: providers
-    description: LLM provider yonetimi
-  - name: chats
-    description: Sohbet oturumlari
-  - name: messages
-    description: Mesaj gonderme ve stream
-paths:
-  /chats:
-    get:
-      tags: [chats]
-      summary: Sohbet listesi
-      operationId: listSessions
-      responses:
+//go:build ignore
+
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"sort"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+type APIConfig struct {
+	BasePath  string     `yaml:"basePath"`
+	Endpoints []Endpoint `yaml:"endpoints"`
+}
+
+type Endpoint struct {
+	Method  string `yaml:"method"`
+	Path    string `yaml:"path"`
+	Handler string `yaml:"handler"`
+	Auth    bool   `yaml:"auth"`
+}
+
+func main() {
+	cfg, err := readAPIConfig("api.yaml")
+	if err != nil {
+		fail("read api.yaml: %v", err)
+	}
+
+	pathBlocks := buildPathBlocks(cfg.Endpoints)
+	doc := renderOpenAPI(pathBlocks)
+
+	if err := os.WriteFile("docs/openapi.yaml", []byte(doc), 0644); err != nil {
+		fail("write docs/openapi.yaml: %v", err)
+	}
+
+	var raw any
+	if err := yaml.Unmarshal([]byte(doc), &raw); err != nil {
+		fail("yaml parse generated doc: %v", err)
+	}
+	b, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		fail("marshal docs/openapi.json: %v", err)
+	}
+	if err := os.WriteFile("docs/openapi.json", append(b, '\n'), 0644); err != nil {
+		fail("write docs/openapi.json: %v", err)
+	}
+
+	fmt.Println("docs/openapi.yaml updated from api.yaml")
+	fmt.Println("docs/openapi.json updated from generated YAML")
+}
+
+func readAPIConfig(path string) (APIConfig, error) {
+	var cfg APIConfig
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return cfg, err
+	}
+	err = yaml.Unmarshal(b, &cfg)
+	return cfg, err
+}
+
+func buildPathBlocks(endpoints []Endpoint) string {
+	byPath := map[string][]Endpoint{}
+	for _, e := range endpoints {
+		byPath[e.Path] = append(byPath[e.Path], e)
+	}
+	paths := make([]string, 0, len(byPath))
+	for p := range byPath {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	var out strings.Builder
+	for _, p := range paths {
+		out.WriteString("  " + p + ":\n")
+		eps := byPath[p]
+		sort.Slice(eps, func(i, j int) bool {
+			return strings.ToUpper(eps[i].Method) < strings.ToUpper(eps[j].Method)
+		})
+		for _, e := range eps {
+			out.WriteString(operationFor(e))
+		}
+	}
+	return out.String()
+}
+
+func operationFor(e Endpoint) string {
+	m := strings.ToLower(strings.TrimSpace(e.Method))
+	sec := ""
+	if !e.Auth {
+		sec = "      security: []\n"
+	}
+	pathParam := ""
+	if strings.Contains(e.Path, "{chatID}") {
+		pathParam = "      parameters:\n        - $ref: \"#/components/parameters/chatID\"\n"
+	}
+
+	switch e.Handler {
+	case "Health":
+		return fmt.Sprintf(`    %s:
+      tags: [health]
+      summary: Health check
+      operationId: health
+%s      responses:
         "200":
-          description: Sohbet listesi
+          description: Servis aktif
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: OK
+`, m, sec)
+	case "Me":
+		return fmt.Sprintf(`    %s:
+      tags: [auth]
+      summary: Mevcut kullanici bilgisi
+      operationId: getMe
+%s      responses:
+        "200":
+          description: Kimlik dogrulanmis kullanici bilgisi
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/ChatListItem"
+                $ref: "#/components/schemas/AuthenticatedUser"
         "401":
           $ref: "#/components/responses/Unauthorized"
-    post:
+`, m, sec)
+	case "ListProviders":
+		return fmt.Sprintf(`    %s:
+      tags: [providers]
+      summary: Aktif LLM provider listesi
+      operationId: listProviders
+%s      responses:
+        "200":
+          description: Provider listesi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListProvidersResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+`, m, sec)
+	case "CreateSession":
+		return fmt.Sprintf(`    %s:
       tags: [chats]
       summary: Yeni sohbet oturumu olustur
       operationId: createSession
-      requestBody:
+%s      requestBody:
         required: true
         content:
           application/json:
@@ -60,14 +166,30 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-  /chats/{chatID}:
-    get:
+`, m, sec)
+	case "ListSessions":
+		return fmt.Sprintf(`    %s:
+      tags: [chats]
+      summary: Sohbet listesi
+      operationId: listSessions
+%s      responses:
+        "200":
+          description: Sohbet listesi
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatListItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+`, m, sec)
+	case "GetChat":
+		return fmt.Sprintf(`    %s:
       tags: [chats]
       summary: Sohbet detayi
       operationId: getChat
-      parameters:
-        - $ref: "#/components/parameters/chatID"
-      responses:
+%s%s      responses:
         "200":
           description: Sohbet detayi
           content:
@@ -78,14 +200,13 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
-  /chats/{chatID}/messages:
-    post:
+`, m, sec, pathParam)
+	case "PostMessage":
+		return fmt.Sprintf(`    %s:
       tags: [messages]
       summary: Mesaj gonder (non-stream)
       operationId: postMessage
-      parameters:
-        - $ref: "#/components/parameters/chatID"
-      requestBody:
+%s%s      requestBody:
         required: true
         content:
           application/json:
@@ -110,14 +231,13 @@ paths:
           $ref: "#/components/responses/ProviderError"
         "504":
           $ref: "#/components/responses/ProviderTimeout"
-  /chats/{chatID}/stream:
-    post:
+`, m, sec, pathParam)
+	case "StreamMessage":
+		return fmt.Sprintf(`    %s:
       tags: [messages]
       summary: Mesaj gonder (SSE stream)
       operationId: streamMessage
-      parameters:
-        - $ref: "#/components/parameters/chatID"
-      requestBody:
+%s%s      requestBody:
         required: true
         content:
           application/json:
@@ -142,49 +262,56 @@ paths:
           $ref: "#/components/responses/ProviderError"
         "504":
           $ref: "#/components/responses/ProviderTimeout"
-  /health:
-    get:
-      tags: [health]
-      summary: Health check
-      operationId: health
-      security: []
-      responses:
+`, m, sec, pathParam)
+	default:
+		return fmt.Sprintf(`    %s:
+      tags: [misc]
+      summary: %s
+      operationId: %s
+%s%s      responses:
         "200":
-          description: Servis aktif
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: OK
-  /me:
-    get:
-      tags: [auth]
-      summary: Mevcut kullanici bilgisi
-      operationId: getMe
-      responses:
-        "200":
-          description: Kimlik dogrulanmis kullanici bilgisi
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AuthenticatedUser"
+          description: OK
         "401":
           $ref: "#/components/responses/Unauthorized"
-  /providers:
-    get:
-      tags: [providers]
-      summary: Aktif LLM provider listesi
-      operationId: listProviders
-      responses:
-        "200":
-          description: Provider listesi
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ListProvidersResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-components:
+`, m, e.Handler, toOperationID(e.Handler), sec, pathParam)
+	}
+}
+
+func toOperationID(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "operation"
+	}
+	return strings.ToLower(s[:1]) + s[1:]
+}
+
+func renderOpenAPI(pathBlocks string) string {
+	return `openapi: "3.1.0"
+info:
+  title: THY Case Study Backend API
+  description: |
+    LLM sohbet backend servisi.
+    Supabase tabanli kimlik dogrulama, coklu LLM provider destegi,
+    token kota yonetimi ve etklesim audit loglama icerir.
+  version: "1.0.0"
+servers:
+  - url: /api
+    description: Default API base path
+security:
+  - bearerAuth: []
+tags:
+  - name: health
+    description: Sistem saglik kontrolu
+  - name: auth
+    description: Kimlik dogrulama
+  - name: providers
+    description: LLM provider yonetimi
+  - name: chats
+    description: Sohbet oturumlari
+  - name: messages
+    description: Mesaj gonderme ve stream
+paths:
+` + pathBlocks + `components:
   securitySchemes:
     bearerAuth:
       type: http
@@ -326,3 +453,11 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+`
+}
+
+func fail(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
+	os.Exit(1)
+}
+
