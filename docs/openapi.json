@@ -20,7 +20,7 @@
             }
           }
         },
-        "description": "Gecersiz istek"
+        "description": "Geçersiz istek"
       },
       "NotFound": {
         "content": {
@@ -30,7 +30,7 @@
             }
           }
         },
-        "description": "Kaynak bulunamadi"
+        "description": "Kaynak bulunamadı"
       },
       "ProviderError": {
         "content": {
@@ -40,7 +40,7 @@
             }
           }
         },
-        "description": "LLM provider hatasi"
+        "description": "LLM provider hatası"
       },
       "ProviderTimeout": {
         "content": {
@@ -50,7 +50,7 @@
             }
           }
         },
-        "description": "LLM provider zaman asimi"
+        "description": "LLM provider zaman aşımı"
       },
       "QuotaExceeded": {
         "content": {
@@ -60,7 +60,7 @@
             }
           }
         },
-        "description": "Token kotasi asildi"
+        "description": "Token kotası aşıldı"
       },
       "Unauthorized": {
         "content": {
@@ -70,7 +70,7 @@
             }
           }
         },
-        "description": "Kimlik dogrulama gerekli"
+        "description": "Kimlik doğrulama gerekli"
       }
     },
     "schemas": {
@@ -332,7 +332,7 @@
     }
   },
   "info": {
-    "description": "LLM sohbet backend servisi.\nSupabase tabanli kimlik dogrulama, coklu LLM provider destegi,\ntoken kota yonetimi ve etklesim audit loglama icerir.\n",
+    "description": "LLM sohbet backend servisi.\nSupabase tabanlı kimlik doğrulama, çoklu LLM provider desteği,\ntoken kota yönetimi ve etkileşim audit loglama içerir.\n",
     "title": "THY Case Study Backend API",
     "version": "1.0.0"
   },
@@ -385,7 +385,7 @@
                 }
               }
             },
-            "description": "Oturum olusturuldu"
+            "description": "Oturum oluşturuldu"
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -394,7 +394,7 @@
             "$ref": "#/components/responses/Unauthorized"
           }
         },
-        "summary": "Yeni sohbet oturumu olustur",
+        "summary": "Yeni sohbet oturumu oluştur",
         "tags": [
           "chats"
         ]
@@ -417,7 +417,7 @@
                 }
               }
             },
-            "description": "Sohbet detayi"
+            "description": "Sohbet detayı"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -426,7 +426,7 @@
             "$ref": "#/components/responses/NotFound"
           }
         },
-        "summary": "Sohbet detayi",
+        "summary": "Sohbet detayı",
         "tags": [
           "chats"
         ]
@@ -459,7 +459,7 @@
                 }
               }
             },
-            "description": "Asistan yaniti"
+            "description": "Asistan yanıtı"
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -480,7 +480,7 @@
             "$ref": "#/components/responses/ProviderTimeout"
           }
         },
-        "summary": "Mesaj gonder (non-stream)",
+        "summary": "Mesaj gönder (non-stream)",
         "tags": [
           "messages"
         ]
@@ -534,7 +534,7 @@
             "$ref": "#/components/responses/ProviderTimeout"
           }
         },
-        "summary": "Mesaj gonder (SSE stream)",
+        "summary": "Mesaj gönder (SSE stream)",
         "tags": [
           "messages"
         ]
@@ -575,13 +575,13 @@
                 }
               }
             },
-            "description": "Kimlik dogrulanmis kullanici bilgisi"
+            "description": "Kimlik doğrulanmış kullanıcı bilgisi"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           }
         },
-        "summary": "Mevcut kullanici bilgisi",
+        "summary": "Mevcut kullanıcı bilgisi",
         "tags": [
           "auth"
         ]
@@ -625,23 +625,23 @@
   ],
   "tags": [
     {
-      "description": "Sistem saglik kontrolu",
+      "description": "Sistem sağlık kontrolü",
       "name": "health"
     },
     {
-      "description": "Kimlik dogrulama",
+      "description": "Kimlik doğrulama",
       "name": "auth"
     },
     {
-      "description": "LLM provider yonetimi",
+      "description": "LLM provider yönetimi",
       "name": "providers"
     },
     {
-      "description": "Sohbet oturumlari",
+      "description": "Sohbet oturumları",
       "name": "chats"
     },
     {
-      "description": "Mesaj gonderme ve stream",
+      "description": "Mesaj gönderme ve stream",
       "name": "messages"
     }
   ]
