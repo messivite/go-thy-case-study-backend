@@ -1,0 +1,563 @@
+openapi: "3.1.0"
+info:
+  title: THY Case Study Backend API
+  description: |
+    LLM sohbet backend servisi.
+    Supabase tabanli kimlik dogrulama, coklu LLM provider destegi,
+    token kota yonetimi ve etklesim audit loglama icerir.
+  version: "1.0.0"
+  contact:
+    name: Mustafa Aksoy
+    url: https://github.com/messivite/go-thy-case-study-backend
+
+servers:
+  - url: /api
+    description: Default API base path
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: health
+    description: Sistem saglik kontrolu
+  - name: auth
+    description: Kimlik dogrulama
+  - name: providers
+    description: LLM provider yonetimi
+  - name: chats
+    description: Sohbet oturumlari
+  - name: messages
+    description: Mesaj gonderme ve stream
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Health check
+      description: Servisin ayakta olup olmadigini kontrol eder.
+      operationId: health
+      security: []
+      responses:
+        "200":
+          description: Servis aktif
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: OK
+
+  /me:
+    get:
+      tags: [auth]
+      summary: Mevcut kullanici bilgisi
+      description: JWT icindeki kullanici bilgilerini doner.
+      operationId: getMe
+      responses:
+        "200":
+          description: Kimlik dogrulanmis kullanici bilgisi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticatedUser"
+              example:
+                UserID: "d13456f1-5289-472e-a8d5-7256c8d33570"
+                Email: "user@example.com"
+                Role: "authenticated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /providers:
+    get:
+      tags: [providers]
+      summary: Aktif LLM provider listesi
+      description: Kayitli ve aktif provider'lari varsayilan bilgisiyle doner.
+      operationId: listProviders
+      responses:
+        "200":
+          description: Provider listesi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListProvidersResponse"
+              example:
+                default: openai
+                providers:
+                  - name: openai
+                    model: gpt-4.1-mini
+                    enabled: true
+                  - name: gemini
+                    model: gemini-2.5-flash
+                    enabled: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /chats:
+    post:
+      tags: [chats]
+      summary: Yeni sohbet oturumu olustur
+      description: |
+        Yeni bir chat session olusturur. Opsiyonel olarak provider
+        ve model belirtilebilir; belirtilmezse providers.yaml
+        varsayilanlari kullanilir.
+      operationId: createSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+            example:
+              title: "Test sohbet"
+              provider: "openai"
+              model: "gpt-4.1-mini"
+      responses:
+        "201":
+          description: Oturum olusturuldu
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateSessionResponse"
+              example:
+                id: "71d4acc8-deb2-401c-a293-337c151b9ac1"
+                provider: "openai"
+                model: "gpt-4.1-mini"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    get:
+      tags: [chats]
+      summary: Sohbet listesi
+      description: Kullanicinin tum sohbet oturumlarini listeler.
+      operationId: listSessions
+      responses:
+        "200":
+          description: Sohbet listesi
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatListItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /chats/{chatID}:
+    get:
+      tags: [chats]
+      summary: Sohbet detayi
+      description: Oturum bilgisi ve tum mesajlari doner.
+      operationId: getChat
+      parameters:
+        - $ref: "#/components/parameters/chatID"
+      responses:
+        "200":
+          description: Sohbet detayi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /chats/{chatID}/messages:
+    post:
+      tags: [messages]
+      summary: Mesaj gonder (non-stream)
+      description: |
+        Kullanici mesajini LLM'e gonderir ve yaniti senkron doner.
+        Opsiyonel provider/model override destekler.
+      operationId: postMessage
+      parameters:
+        - $ref: "#/components/parameters/chatID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostMessageRequest"
+            examples:
+              simple:
+                summary: Tek mesaj
+                value:
+                  content: "Merhaba, nasilsin?"
+              withOverride:
+                summary: Provider override
+                value:
+                  provider: "gemini"
+                  model: "gemini-2.5-flash"
+                  content: "Merhaba"
+              withHistory:
+                summary: Mesaj gecmisi ile
+                value:
+                  provider: "openai"
+                  messages:
+                    - role: "user"
+                      content: "Merhaba"
+      responses:
+        "201":
+          description: Asistan yaniti
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantResponse"
+              example:
+                assistantMessage:
+                  role: "assistant"
+                  content: "Merhaba! Size nasil yardimci olabilirim?"
+                  provider: "openai"
+                  model: "gpt-4.1-mini-2025-04-14"
+                usage:
+                  prompt_tokens: 16
+                  completion_tokens: 38
+                  total_tokens: 54
+                  provider: "openai"
+                  model: "gpt-4.1-mini-2025-04-14"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/QuotaExceeded"
+        "502":
+          $ref: "#/components/responses/ProviderError"
+        "504":
+          $ref: "#/components/responses/ProviderTimeout"
+
+  /chats/{chatID}/stream:
+    post:
+      tags: [messages]
+      summary: Mesaj gonder (SSE stream)
+      description: |
+        Kullanici mesajini LLM'e gonderir ve yaniti Server-Sent Events
+        ile parca parca doner. Istek govdesi non-stream ile aynidir.
+
+        SSE event tipleri:
+        - `meta`: provider/model bilgisi ve usage
+        - `delta`: metin parcasi
+        - `done`: stream tamamlandi
+        - `error`: hata olustu
+      operationId: streamMessage
+      parameters:
+        - $ref: "#/components/parameters/chatID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostMessageRequest"
+            example:
+              content: "Kisa bir selamlama yaz"
+      responses:
+        "200":
+          description: Server-Sent Events stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  SSE formati: `data: {"type":"delta","delta":"..."}\n\n`
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/QuotaExceeded"
+        "502":
+          $ref: "#/components/responses/ProviderError"
+        "504":
+          $ref: "#/components/responses/ProviderTimeout"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Supabase access token
+
+  parameters:
+    chatID:
+      name: chatID
+      in: path
+      required: true
+      description: Sohbet oturum UUID'si
+      schema:
+        type: string
+        format: uuid
+        example: "71d4acc8-deb2-401c-a293-337c151b9ac1"
+
+  schemas:
+    AuthenticatedUser:
+      type: object
+      properties:
+        UserID:
+          type: string
+          format: uuid
+        Email:
+          type: string
+          format: email
+        Role:
+          type: string
+      required: [UserID, Email, Role]
+
+    ListProvidersResponse:
+      type: object
+      properties:
+        default:
+          type: string
+          description: Varsayilan provider adi
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderInfo"
+      required: [default, providers]
+
+    ProviderInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        model:
+          type: string
+          description: Varsayilan model
+        enabled:
+          type: boolean
+      required: [name, model, enabled]
+
+    CreateSessionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Sohbet basligi
+        provider:
+          type: string
+          description: Opsiyonel provider override
+        model:
+          type: string
+          description: Opsiyonel model override
+
+    CreateSessionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        model:
+          type: string
+      required: [id, provider, model]
+
+    ChatListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        lastMessagePreview:
+          type: string
+      required: [id, title, provider, model, createdAt, updatedAt]
+
+    ChatMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content:
+          type: string
+        provider:
+          type: string
+          description: Asistan mesajlarinda provider bilgisi
+        model:
+          type: string
+          description: Asistan mesajlarinda model bilgisi
+      required: [role, content]
+
+    ChatDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+      required: [id, title, provider, model, messages]
+
+    PostMessageRequest:
+      type: object
+      properties:
+        provider:
+          type: string
+          description: Opsiyonel provider override
+        model:
+          type: string
+          description: Opsiyonel model override
+        content:
+          type: string
+          description: Tek mesaj icerigi
+        messages:
+          type: array
+          description: Alternatif mesaj gecmisi formati
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+
+    AssistantResponse:
+      type: object
+      properties:
+        assistantMessage:
+          $ref: "#/components/schemas/ChatMessage"
+        usage:
+          type: object
+          description: Provider'dan donen token kullanim bilgisi
+          properties:
+            prompt_tokens:
+              type: integer
+            completion_tokens:
+              type: integer
+            total_tokens:
+              type: integer
+            provider:
+              type: string
+            model:
+              type: string
+          additionalProperties: true
+      required: [assistantMessage]
+
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorBody"
+      required: [error]
+
+    ErrorBody:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Makine okunur hata kodu
+        message:
+          type: string
+          description: Insana yonelik hata mesaji
+      required: [code, message]
+
+  responses:
+    Unauthorized:
+      description: Kimlik dogrulama gerekli
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            error:
+              code: "unauthorized"
+              message: "Unauthorized"
+
+    BadRequest:
+      description: Gecersiz istek
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            error:
+              code: "bad_request"
+              message: "Invalid request payload"
+
+    NotFound:
+      description: Kaynak bulunamadi
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            error:
+              code: "not_found"
+              message: "session not found"
+
+    QuotaExceeded:
+      description: Token kotasi asildi
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          examples:
+            daily:
+              summary: Gunluk kota asimi
+              value:
+                error:
+                  code: "llm_quota_daily_exceeded"
+                  message: "Daily token quota exceeded"
+            weekly:
+              summary: Haftalik kota asimi
+              value:
+                error:
+                  code: "llm_quota_weekly_exceeded"
+                  message: "Weekly token quota exceeded"
+
+    ProviderError:
+      description: LLM provider hatasi
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          examples:
+            authFailed:
+              summary: Provider auth hatasi
+              value:
+                error:
+                  code: "provider_auth_failed"
+                  message: "Provider authentication failed"
+            unavailable:
+              summary: Provider erisilemez
+              value:
+                error:
+                  code: "provider_unavailable"
+                  message: "Provider temporarily unavailable"
+            rateLimited:
+              summary: Provider rate limit
+              value:
+                error:
+                  code: "provider_rate_limited"
+                  message: "Provider rate limit exceeded"
+
+    ProviderTimeout:
+      description: LLM provider zaman asimi
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            error:
+              code: "provider_timeout"
+              message: "Provider request timed out"
