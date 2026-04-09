@@ -41,3 +41,8 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+      - name: OpenAPI spec drift check
+        run: |
+          go run ./scripts/generate_openapi.go
+          git diff --exit-code docs/openapi.yaml docs/openapi.json || (echo "ERROR: OpenAPI docs are out of date — run 'make openapi' and commit" && exit 1)
