@@ -27,6 +27,13 @@
 
 # THY için Case Study Kapsamında Hazırlanan Backend Side Go Projesi
 
+| Ad | Açıklama | Link |
+|---|---|---|
+| PROD API Base URL | Canlı ortamda backend API istekleri için temel adres | [http://go-thy-case-study-backend-production.up.railway.app/](http://go-thy-case-study-backend-production.up.railway.app/) |
+| PROD Swagger UI | Canlı ortamda API dokümantasyonu ve endpoint deneme ekranı | [http://go-thy-case-study-backend-production.up.railway.app/docs-a7b3c9e2f1d4](http://go-thy-case-study-backend-production.up.railway.app/docs-a7b3c9e2f1d4) |
+| DEV API Base URL | Lokal geliştirme ortamında API istekleri için temel adres | [http://localhost:8081/](http://localhost:8081/) |
+| DEV Swagger UI | Lokal ortamda API dokümantasyonu ve endpoint test ekranı | [http://localhost:8081/docs-a7b3c9e2f1d4](http://localhost:8081/docs-a7b3c9e2f1d4) |
+
 Supabase tabanlı kimlik doğrulama ve rol yönetimi kullanan, LLM sohbet akışlarını destekleyen Go backend uygulaması.
 
 **Sürüm notları:** [CHANGELOG.md](CHANGELOG.md) - [RELEASE_NOTES.md](RELEASE_NOTES.md)
