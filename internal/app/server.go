@@ -33,8 +33,11 @@ func NewServer(authService auth.AuthService, chatHandler *chat.Handler, cfg Serv
 	r.Get("/", landing.Handler())
 	r.Get("/health", health)
 
-	if path := strings.TrimRight(cfg.DocsPath, "/"); path != "" {
-		r.Mount(path, http.StripPrefix(path, swagger.Handler(path)))
+	if path := normalizeDocsPath(cfg.DocsPath); path != "" {
+		r.Get(path, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, path+"/", http.StatusTemporaryRedirect)
+		})
+		r.Mount(path+"/", http.StripPrefix(path, swagger.Handler(path)))
 	}
 
 	r.Route("/api", func(r chi.Router) {
@@ -58,4 +61,19 @@ func NewServer(authService auth.AuthService, chatHandler *chat.Handler, cfg Serv
 
 func (s *Server) Handler() http.Handler {
 	return s.router
+}
+
+func normalizeDocsPath(raw string) string {
+	path := strings.TrimSpace(raw)
+	if path == "" {
+		return ""
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	path = strings.TrimRight(path, "/")
+	if path == "" || path == "/" {
+		return ""
+	}
+	return path
 }
