@@ -16,6 +16,7 @@ basePath: /api
 output:
   serverDir: server
   handlersDir: handlers
+
 endpoints:
   - method: GET
     path: /health

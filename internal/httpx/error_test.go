@@ -74,6 +74,8 @@ func TestProviderErrors(t *testing.T) {
 		{ProviderTimeout, http.StatusGatewayTimeout},
 		{ProviderRateLimited, http.StatusTooManyRequests},
 		{ProviderUnavailable, http.StatusBadGateway},
+		{QuotaDailyExceeded, http.StatusTooManyRequests},
+		{QuotaWeeklyExceeded, http.StatusTooManyRequests},
 	}
 
 	for _, tt := range tests {

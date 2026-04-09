@@ -18,22 +18,29 @@ func NewServer(authService auth.AuthService, chatHandler *chat.Handler) *Server 
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+	health := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
+		_, _ = w.Write([]byte("OK"))
+	}
+
+	// Kök: Dockerfile / Railway / curl …:8081/health
+	r.Get("/health", health)
 
 	r.Route("/api", func(r chi.Router) {
-		r.Use(auth.AuthMiddleware(authService))
-		r.Get("/me", chatHandler.Me)
-		r.Get("/providers", chatHandler.ListProviders)
+		// basePath /api + /health (Postman vb.) — JWT yok; auth sadece alt grupta
+		r.Get("/health", health)
 
-		// chat API
-		r.Post("/chats", chatHandler.CreateSession)
-		r.Get("/chats", chatHandler.ListSessions)
-		r.Get("/chats/{chatID}", chatHandler.GetChat)
-		r.Post("/chats/{chatID}/messages", chatHandler.PostMessage)
-		r.Post("/chats/{chatID}/stream", chatHandler.StreamMessage)
+		r.Group(func(r chi.Router) {
+			r.Use(auth.AuthMiddleware(authService))
+			r.Get("/me", chatHandler.Me)
+			r.Get("/providers", chatHandler.ListProviders)
+
+			r.Post("/chats", chatHandler.CreateSession)
+			r.Get("/chats", chatHandler.ListSessions)
+			r.Get("/chats/{chatID}", chatHandler.GetChat)
+			r.Post("/chats/{chatID}/messages", chatHandler.PostMessage)
+			r.Post("/chats/{chatID}/stream", chatHandler.StreamMessage)
+		})
 	})
 
 	return &Server{router: r}

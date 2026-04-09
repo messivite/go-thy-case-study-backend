@@ -62,11 +62,12 @@ func serviceName() string {
 	return "thy-case-study-api"
 }
 
-// HTTPHandler gelen HTTP istekleri için server span üretir (/health hariç).
+// HTTPHandler gelen HTTP istekleri için server span üretir (health uçları hariç).
 func HTTPHandler(operation string, h http.Handler) http.Handler {
 	return otelhttp.NewHandler(h, operation,
 		otelhttp.WithFilter(func(r *http.Request) bool {
-			return r.URL.Path != "/health"
+			p := r.URL.Path
+			return p != "/health" && p != "/api/health"
 		}),
 	)
 }

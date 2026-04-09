@@ -414,6 +414,10 @@ func writeAppError(w http.ResponseWriter, err error) {
 		httpx.ProviderUnavailable(w)
 	case errors.Is(err, domain.ErrProviderBadRequest):
 		httpx.BadRequest(w, err.Error())
+	case errors.Is(err, domain.ErrQuotaDailyExceeded):
+		httpx.QuotaDailyExceeded(w)
+	case errors.Is(err, domain.ErrQuotaWeeklyExceeded):
+		httpx.QuotaWeeklyExceeded(w)
 	default:
 		httpx.Internal(w)
 	}

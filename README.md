@@ -264,7 +264,7 @@ go run ./cmd/thy-case-llm doctor
 `.env.example`:
 
 - `PORT` (default `8081`)
-- `CHAT_PERSISTENCE` — yazmazsan `supabase`; `memory` dersen RAM. `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` eksikse yine memory’ye düşüyor (`cmd/api/main.go`).
+- `CHAT_PERSISTENCE` — ayrıntı ve sorun giderme: aşağıdaki **[CHAT_PERSISTENCE](#chat_persistence)** bölümü.
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
@@ -276,6 +276,21 @@ go run ./cmd/thy-case-llm doctor
 - `PROVIDERS_CONFIG` (varsayılan `providers.yaml`, opsiyonel)
 - `OBSERVABILITY_LOG_FILE` (opsiyonel) — yapılandırılmış logları **JSON Lines** olarak bu dosyaya da yazar; stdout davranışı aynı kalır. Örn. `./logs/app.jsonl` veya `/var/log/thy-api.jsonl`. Boş bırakılınca sadece process stdout (chi logger ayrı). Loki, Vector, CloudWatch agent, `tail -f` ile izlenebilir.
 - `OTEL_EXPORTER_OTLP_ENDPOINT` (opsiyonel) — OpenTelemetry trace export (OTLP HTTP); ayrıntı aşağıda.
+
+### CHAT_PERSISTENCE
+
+| Değer | Davranış |
+|-------|----------|
+| `supabase` veya **boş** (varsayılan) | Sohbet **`chat_sessions` / `chat_messages`** üzerinden Supabase REST + service role. Kota ve `llm_interaction_log` da bu modda anlamlıdır. |
+| `memory` | Veri **yalnızca süreç RAM’inde** (`MemoryRepository`); sunucuyu kapatınca silinir. Kota katmanı **stub** (`MemoryQuotaRepository`, pratikte limit uygulanmaz). |
+
+**Supabase’e düşmeme:** `CHAT_PERSISTENCE=supabase` iken `SUPABASE_URL` veya `SUPABASE_SERVICE_ROLE_KEY` boşsa kod **otomatik memory’ye** geçer ve log’a uyarı yazar.
+
+**`.env` (yerel):** `cmd/api` ve `cmd/server` açılışta **bulduğu ilk `.env`** dosyasını yükler (cwd’den üst dizinlere doğru arar, `internal/dotenv`). [`Overload`](https://github.com/joho/godotenv) kullanılır: **dosyadaki değerler shell’de kalmış eski `export`’ların üzerine yazılır** (ör. `CHAT_PERSISTENCE=memory` unutulduysa `.env` içindeki `supabase` geçerli olur). **Üretim imajına `.env koymayın**; yalnızca platform env kullanın. Tek seferlik `CHAT_PERSISTENCE=memory go run …` denemesi için `.env` satırını geçici yorum satırı yap veya `env -u CHAT_PERSISTENCE go run ./cmd/api`.
+
+**İsteğe bağlı:** Hâlâ `source .env` veya `VAR=değer go run …` kullanabilirsin.
+
+**Doğrulama:** Açılış log’u `chat persistence: supabase (postgres)` veya `chat persistence: memory (in-process)` — hangi modda olduğunu buradan teyit et.
 
 ### Observability (dosyaya log)
 
@@ -317,8 +332,8 @@ go run ./cmd/thy-case-llm doctor
    ```
 
    Log’da `Starting HTTP server` … `endpoint: "[::]:4318"` görünmeli.
-4. **API tarafı** — Process ortamında `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` (ve isteğe bağlı `OTEL_SERVICE_NAME`) tanımlı olsun; `go run` `.env` okumaz, export veya IDE env / `gosupabase dev` ile yükle.
-5. **Test** — `GET /health` trace üretmez; `GET /api/providers` veya `GET /api/chats` gibi korumalı bir endpoint’e JWT ile istek at. Trace çıktısı **Collector’ın çalıştığı terminalde** (`debug` exporter) görünür.
+4. **API tarafı** — `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` (ve isteğe bağlı `OTEL_SERVICE_NAME`) tanımlı olsun; repo kökündeki `.env` içine yazabilirsin (`cmd/api` açılışta yükler) veya export / IDE env kullan.
+5. **Test** — `GET /health` ve `GET /api/health` trace üretmez; `GET /api/providers` veya `GET /api/chats` gibi korumalı bir endpoint’e JWT ile istek at. Trace çıktısı **Collector’ın çalıştığı terminalde** (`debug` exporter) görünür.
 
 **Örnek ekran görüntüsü** — Collector’da gelen span (bu projeden `GET /api/chats`, `debug` exporter çıktısı):
 
@@ -334,7 +349,7 @@ go run ./cmd/thy-case-llm doctor
 
 | Metot | Endpoint | Auth | Açıklama |
 |-------|----------|------|----------|
-| `GET` | `/api/health` | Hayır | Sağlık kontrolü |
+| `GET` | `/health` veya `/api/health` | Hayır | Aynı yanıt (`OK`). Probe için `/health`; `baseUrl` `…/api` ise path sadece `/health` — tam path `/api/health` olur. `baseUrl` zaten `…/api` iken path’e bir daha `/api/health` ekleme (çift `/api` 404). |
 | `GET` | `/api/me` | Evet | JWT'deki kullanıcı bilgisi |
 | `GET` | `/api/providers` | Evet | Aktif LLM provider'ları (default bilgisi dahil) |
 | `POST` | `/api/chats` | Evet | Yeni sohbet; gövdede isteğe bağlı `provider`, `model` (`providers.yaml` / `GET /api/providers`). Cevap: `id`, `provider`, `model` (session default’ları) |
@@ -550,21 +565,29 @@ curl -N -X POST "http://localhost:8081/api/chats/<CHAT_ID>/stream" \
 - **Faz 1:** Domain / application / infra ayrımı, `providers.yaml` + `thy-case-llm`, yeni LLM için adapter + registry.
 - **Faz 2:** Template CLI (`templates list/show`), gerçek OpenAI/Gemini çağrıları, chat’i Postgres’e yazma, usage normalize, log tarafı, retry/timeout, provider hatalarını HTTP’ye map etme.
 
-### Faz 3 — sonra bakacağımız işler
+### Faz 3
 
-#### Self-hosted / özel endpoint
+`thy-case-llm deploy` şablonları ve canlı örnek API (Railway) tamam.
+
+#### Self-hosted / özel endpoint (henüz yapılmadı)
 
 Kendi makinemde veya şirket gateway’inde model çalıştırırsam şu an kod sadece OpenAI’nin sabit URL’ine gidiyor. Faz 3’te base URL’yi env veya `providers.yaml`’dan verebilir hale getirmek istiyorum (vLLM, LiteLLM proxy vs.). Gerekirse ek header. CLI’da da bu endpoint’i tanımlama. “Sadece farklı model id” ile “farklı host” ayrımını dokümanda net yazarım.
 
-#### Token kotası — günlük / haftalık, global + kullanıcıya özel
+#### Token kotası (tamam)
 
-OpenAI’nin döndürdüğü `usage` token’larını kullanıp ürün içi limit koymak:
+- **`llm_quota_defaults`** (singleton): varsayılan `default_daily_tokens` (100k), `default_weekly_tokens` (500k).
+- **`user_llm_usage_quota`** (PK = `user_id`): kullanıcıya özel günlük/haftalık limit + **`quota_bypass`** (admin override).
+- **Profil trigger:** `AFTER INSERT ON public.profiles` ile kota satırı otomatik; mevcut kullanıcılar backfill.
+- **Kontrol:** `SendMessage` / `StreamMessage` girişinde kota sorgulanır; aşılmışsa **HTTP 429** + `llm_quota_daily_exceeded` veya `llm_quota_weekly_exceeded`.
 
-- Proje default’u: günlük + haftalık limit tek yerde (tablo veya settings kaydı); yeni üye için başlangıç değeri buradan.
-- Kullanıcıya özel: ayrı tablo, `user_id` FK; günlük/haftalık override.
-- Register’da default’u kullanıcı kotasına yazan trigger veya hook.
-- İstekte (veya LLM cevabı geldikten sonra) sayaç güncelle; limit dolunca anlamlı `429` + `code`.
-- Admin panelden user bulup kotayı düzenleme; satır yoksa default’tan üretme kuralı — detayını sonra netleştiririz.
+#### LLM etkileşim günlüğü (tamam)
+
+`public.llm_interaction_log` + `chat_messages` AFTER INSERT trigger.
+
+- Kullanıcı mesajı LLM çağrısından **önce** kaydedilir; trigger `pending` audit satırı oluşturur.
+- Başarıda assistant INSERT trigger `ok` yapar; Go API token sayılarını `llm_set_usage_for_user_message` RPC ile yazar.
+- LLM hatası olursa Go API `llm_fail_pending_for_user_message` RPC ile `error` + `error_code` / `provider_http_status` yazar.
+- RLS yok; inceleme Supabase SQL / service role.
 
 ## Deploy
 

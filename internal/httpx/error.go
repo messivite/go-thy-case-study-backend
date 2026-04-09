@@ -60,3 +60,11 @@ func ProviderRateLimited(w http.ResponseWriter) {
 func ProviderUnavailable(w http.ResponseWriter) {
 	WriteError(w, http.StatusBadGateway, "provider_unavailable", "Provider temporarily unavailable")
 }
+
+func QuotaDailyExceeded(w http.ResponseWriter) {
+	WriteError(w, http.StatusTooManyRequests, "llm_quota_daily_exceeded", "Daily token quota exceeded")
+}
+
+func QuotaWeeklyExceeded(w http.ResponseWriter) {
+	WriteError(w, http.StatusTooManyRequests, "llm_quota_weekly_exceeded", "Weekly token quota exceeded")
+}

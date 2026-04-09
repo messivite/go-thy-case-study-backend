@@ -13,12 +13,13 @@ import (
 type StreamFinalize func(assistantContent string) (domain.ChatMessage, error)
 
 type UseCase struct {
-	repo     domain.Repository
-	registry *provider.Registry
+	repo      domain.Repository
+	quotaRepo domain.QuotaRepository
+	registry  *provider.Registry
 }
 
-func NewUseCase(repo domain.Repository, registry *provider.Registry) *UseCase {
-	return &UseCase{repo: repo, registry: registry}
+func NewUseCase(repo domain.Repository, quotaRepo domain.QuotaRepository, registry *provider.Registry) *UseCase {
+	return &UseCase{repo: repo, quotaRepo: quotaRepo, registry: registry}
 }
 
 func (uc *UseCase) CreateSession(ctx context.Context, userID, title, provider, model string) (domain.ChatSession, error) {
@@ -78,6 +79,30 @@ func (uc *UseCase) GetSessionSummary(ctx context.Context, chatID string) (lastMe
 	return preview, last.CreatedAt
 }
 
+// checkQuota returns nil if the user is allowed, or a quota error.
+func (uc *UseCase) checkQuota(ctx context.Context, userID string) error {
+	q, err := uc.quotaRepo.GetUserQuota(ctx, userID)
+	if err != nil {
+		observability.Warn("quota.fetch_failed", map[string]any{"user_id": userID, "err": err.Error()})
+		return nil
+	}
+	if q.QuotaBypass {
+		return nil
+	}
+	usage, err := uc.quotaRepo.GetUserTokenUsage(ctx, userID)
+	if err != nil {
+		observability.Warn("quota.usage_fetch_failed", map[string]any{"user_id": userID, "err": err.Error()})
+		return nil
+	}
+	if q.DailyTokenLimit > 0 && usage.DailyTotal >= q.DailyTokenLimit {
+		return domain.ErrQuotaDailyExceeded
+	}
+	if q.WeeklyTokenLimit > 0 && usage.WeeklyTotal >= q.WeeklyTokenLimit {
+		return domain.ErrQuotaWeeklyExceeded
+	}
+	return nil
+}
+
 func (uc *UseCase) SendMessage(
 	ctx context.Context,
 	userID, chatID, providerName, model, content string,
@@ -103,41 +128,47 @@ func (uc *UseCase) SendMessage(
 		return domain.ChatMessage{}, nil, domain.ErrUnauthorized
 	}
 
-	history, err := uc.repo.GetMessagesBySession(ctx, chatID)
-	if err != nil {
+	if err := uc.checkQuota(ctx, userID); err != nil {
 		return domain.ChatMessage{}, nil, err
 	}
-	reqMessages := append(history, domain.ChatMessage{
-		Role:    domain.RoleUser,
-		Content: content,
-	})
 
 	p, err := uc.registry.Get(providerName)
 	if err != nil {
 		return domain.ChatMessage{}, nil, err
 	}
 	resolvedProvider := p.Name()
+	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, "")
+
+	// Save user message first so trigger creates pending audit row.
+	userMsg, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, content, resolvedProvider, effModel)
+	if err != nil {
+		return domain.ChatMessage{}, nil, err
+	}
+
+	history, err := uc.repo.GetMessagesBySession(ctx, chatID)
+	if err != nil {
+		return domain.ChatMessage{}, nil, err
+	}
 
 	observability.LLMRequest(resolvedProvider, model, userID, chatID)
 	start := time.Now()
 
-	resp, err := p.Complete(ctx, domain.ProviderRequest{
+	resp, llmErr := p.Complete(ctx, domain.ProviderRequest{
 		Provider: resolvedProvider,
 		Model:    model,
-		Messages: reqMessages,
+		Messages: history,
 	})
-	if err != nil {
-		observability.LLMError(resolvedProvider, model, err)
-		return domain.ChatMessage{}, nil, err
+	if llmErr != nil {
+		observability.LLMError(resolvedProvider, model, llmErr)
+		uc.auditFail(ctx, userMsg.ID.String(), llmErr)
+		return domain.ChatMessage{}, nil, llmErr
 	}
 
 	usage := domain.NormalizeUsage(resp.Usage)
 	observability.LLMResponse(resolvedProvider, usage.Model, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens, time.Since(start).Milliseconds())
 
-	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, usage.Model)
-
-	if _, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, content, resolvedProvider, effModel); err != nil {
-		return domain.ChatMessage{}, nil, err
+	if usage.Model != "" {
+		effModel = usage.Model
 	}
 
 	assistant, err := uc.repo.SaveMessage(ctx, chatID, "", domain.RoleAssistant, resp.Content, resolvedProvider, effModel)
@@ -147,6 +178,8 @@ func (uc *UseCase) SendMessage(
 	if err := uc.repo.UpdateSessionLastLLM(ctx, chatID, resolvedProvider, effModel); err != nil {
 		observability.Info("session.last_llm.update_failed", map[string]any{"session_id": chatID, "err": err.Error()})
 	}
+
+	uc.auditUsage(ctx, userMsg.ID.String(), usage)
 
 	return assistant, resp.Usage, nil
 }
@@ -177,43 +210,45 @@ func (uc *UseCase) StreamMessage(
 		return nil, nil, nil, domain.ErrUnauthorized
 	}
 
-	history, err := uc.repo.GetMessagesBySession(ctx, chatID)
-	if err != nil {
+	if err := uc.checkQuota(ctx, userID); err != nil {
 		return nil, nil, nil, err
 	}
-	reqMessages := append(history, domain.ChatMessage{
-		Role:    domain.RoleUser,
-		Content: prompt,
-	})
 
 	p, err := uc.registry.Get(providerName)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	resolvedProvider := p.Name()
+	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, "")
+
+	// Save user message before stream so trigger creates pending audit row.
+	userMsg, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, prompt, resolvedProvider, effModel)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	observability.LLMRequest(resolvedProvider, model, userID, chatID)
 
 	events, err := p.Stream(ctx, domain.ProviderRequest{
 		Provider: resolvedProvider,
 		Model:    model,
-		Messages: reqMessages,
+		Messages: func() []domain.ChatMessage {
+			h, _ := uc.repo.GetMessagesBySession(ctx, chatID)
+			return h
+		}(),
 	})
 	if err != nil {
 		observability.LLMError(resolvedProvider, model, err)
+		uc.auditFail(ctx, userMsg.ID.String(), err)
 		return nil, nil, nil, err
 	}
 
-	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, "")
-	if _, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, prompt, resolvedProvider, effModel); err != nil {
-		return nil, nil, nil, err
-	}
-
-	usage := map[string]any{
+	usageMeta := map[string]any{
 		"provider": resolvedProvider,
 		"model":    effModel,
 	}
 
+	userMsgID := userMsg.ID.String()
 	finalize := func(assistantContent string) (domain.ChatMessage, error) {
 		observability.Info("llm.stream.complete", map[string]any{
 			"provider":   resolvedProvider,
@@ -223,6 +258,7 @@ func (uc *UseCase) StreamMessage(
 		})
 		msg, err := uc.repo.SaveMessage(ctx, chatID, "", domain.RoleAssistant, assistantContent, resolvedProvider, effModel)
 		if err != nil {
+			uc.auditFail(ctx, userMsgID, err)
 			return domain.ChatMessage{}, err
 		}
 		if err := uc.repo.UpdateSessionLastLLM(ctx, chatID, resolvedProvider, effModel); err != nil {
@@ -231,7 +267,30 @@ func (uc *UseCase) StreamMessage(
 		return msg, nil
 	}
 
-	return events, usage, finalize, nil
+	return events, usageMeta, finalize, nil
+}
+
+// auditFail records an LLM failure in llm_interaction_log via RPC.
+func (uc *UseCase) auditFail(ctx context.Context, userMessageID string, llmErr error) {
+	code := domain.LLMErrorCode(llmErr)
+	status := domain.LLMHTTPStatus(llmErr)
+	summary := llmErr.Error()
+	if len(summary) > 500 {
+		summary = summary[:500]
+	}
+	if err := uc.quotaRepo.FailPendingLog(ctx, userMessageID, summary, code, status); err != nil {
+		observability.Warn("audit.fail_pending_rpc", map[string]any{"user_message_id": userMessageID, "err": err.Error()})
+	}
+}
+
+// auditUsage records token usage in llm_interaction_log via RPC.
+func (uc *UseCase) auditUsage(ctx context.Context, userMessageID string, usage domain.NormalizedUsage) {
+	if usage.TotalTokens == 0 && usage.PromptTokens == 0 {
+		return
+	}
+	if err := uc.quotaRepo.SetUsageLog(ctx, userMessageID, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens); err != nil {
+		observability.Warn("audit.set_usage_rpc", map[string]any{"user_message_id": userMessageID, "err": err.Error()})
+	}
 }
 
 func effectiveLLMModel(reg *provider.Registry, resolvedProvider, requestModel, usageModel string) string {
