@@ -117,11 +117,11 @@ func operationFor(e Endpoint) string {
 	case "Me":
 		return fmt.Sprintf(`    %s:
       tags: [auth]
-      summary: Mevcut kullanici bilgisi
+      summary: Mevcut kullanıcı bilgisi
       operationId: getMe
 %s      responses:
         "200":
-          description: Kimlik dogrulanmis kullanici bilgisi
+          description: Kimlik doğrulanmış kullanıcı bilgisi
           content:
             application/json:
               schema:
@@ -147,7 +147,7 @@ func operationFor(e Endpoint) string {
 	case "CreateSession":
 		return fmt.Sprintf(`    %s:
       tags: [chats]
-      summary: Yeni sohbet oturumu olustur
+      summary: Yeni sohbet oturumu oluştur
       operationId: createSession
 %s      requestBody:
         required: true
@@ -157,7 +157,7 @@ func operationFor(e Endpoint) string {
               $ref: "#/components/schemas/CreateSessionRequest"
       responses:
         "201":
-          description: Oturum olusturuldu
+          description: Oturum oluşturuldu
           content:
             application/json:
               schema:
@@ -187,11 +187,11 @@ func operationFor(e Endpoint) string {
 	case "GetChat":
 		return fmt.Sprintf(`    %s:
       tags: [chats]
-      summary: Sohbet detayi
+      summary: Sohbet detayı
       operationId: getChat
 %s%s      responses:
         "200":
-          description: Sohbet detayi
+          description: Sohbet detayı
           content:
             application/json:
               schema:
@@ -204,7 +204,7 @@ func operationFor(e Endpoint) string {
 	case "PostMessage":
 		return fmt.Sprintf(`    %s:
       tags: [messages]
-      summary: Mesaj gonder (non-stream)
+      summary: Mesaj gönder (non-stream)
       operationId: postMessage
 %s%s      requestBody:
         required: true
@@ -214,7 +214,7 @@ func operationFor(e Endpoint) string {
               $ref: "#/components/schemas/PostMessageRequest"
       responses:
         "201":
-          description: Asistan yaniti
+          description: Asistan yanıtı
           content:
             application/json:
               schema:
@@ -235,7 +235,7 @@ func operationFor(e Endpoint) string {
 	case "StreamMessage":
 		return fmt.Sprintf(`    %s:
       tags: [messages]
-      summary: Mesaj gonder (SSE stream)
+      summary: Mesaj gönder (SSE stream)
       operationId: streamMessage
 %s%s      requestBody:
         required: true
@@ -291,8 +291,8 @@ info:
   title: THY Case Study Backend API
   description: |
     LLM sohbet backend servisi.
-    Supabase tabanli kimlik dogrulama, coklu LLM provider destegi,
-    token kota yonetimi ve etklesim audit loglama icerir.
+    Supabase tabanlı kimlik doğrulama, çoklu LLM provider desteği,
+    token kota yönetimi ve etkileşim audit loglama içerir.
   version: "1.0.0"
 servers:
   - url: /api
@@ -301,15 +301,15 @@ security:
   - bearerAuth: []
 tags:
   - name: health
-    description: Sistem saglik kontrolu
+    description: Sistem sağlık kontrolü
   - name: auth
-    description: Kimlik dogrulama
+    description: Kimlik doğrulama
   - name: providers
-    description: LLM provider yonetimi
+    description: LLM provider yönetimi
   - name: chats
-    description: Sohbet oturumlari
+    description: Sohbet oturumları
   - name: messages
-    description: Mesaj gonderme ve stream
+    description: Mesaj gönderme ve stream
 paths:
 ` + pathBlocks + `components:
   securitySchemes:
@@ -424,32 +424,32 @@ paths:
       required: [error]
   responses:
     Unauthorized:
-      description: Kimlik dogrulama gerekli
+      description: Kimlik doğrulama gerekli
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     BadRequest:
-      description: Gecersiz istek
+      description: Geçersiz istek
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     NotFound:
-      description: Kaynak bulunamadi
+      description: Kaynak bulunamadı
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     QuotaExceeded:
-      description: Token kotasi asildi
+      description: Token kotası aşıldı
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     ProviderError:
-      description: LLM provider hatasi
+      description: LLM provider hatası
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     ProviderTimeout:
-      description: LLM provider zaman asimi
+      description: LLM provider zaman aşımı
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
