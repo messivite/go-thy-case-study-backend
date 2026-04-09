@@ -68,3 +68,8 @@ func QuotaDailyExceeded(w http.ResponseWriter) {
 func QuotaWeeklyExceeded(w http.ResponseWriter) {
 	WriteError(w, http.StatusTooManyRequests, "llm_quota_weekly_exceeded", "Weekly token quota exceeded")
 }
+
+func GenerationCancelled(w http.ResponseWriter) {
+	// 499 mirrors client-closed behavior used by common proxies.
+	WriteError(w, 499, "generation_cancelled", "Generation cancelled by user")
+}

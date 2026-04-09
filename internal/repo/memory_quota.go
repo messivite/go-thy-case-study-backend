@@ -29,6 +29,10 @@ func (m *MemoryQuotaRepository) FailPendingLog(_ context.Context, _, _, _ string
 	return nil
 }
 
+func (m *MemoryQuotaRepository) CancelPendingLog(_ context.Context, _ string) error {
+	return nil
+}
+
 func (m *MemoryQuotaRepository) SetUsageLog(_ context.Context, _ string, _, _, _ int) error {
 	return nil
 }

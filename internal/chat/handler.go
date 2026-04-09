@@ -266,7 +266,7 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 	streamCtx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
-	events, usage, finalize, err := h.uc.StreamMessage(streamCtx, user.UserID, chatID, req.Provider, req.Model, req.Content, toDomainMessages(req.Messages))
+	events, usage, finalize, cancelStream, err := h.uc.StreamMessage(streamCtx, user.UserID, chatID, req.Provider, req.Model, req.Content, toDomainMessages(req.Messages))
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -291,6 +291,25 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-streamCtx.Done():
+			partialRaw := out.String()
+			if strings.TrimSpace(partialRaw) == "" {
+				cancelStream(0)
+			} else {
+				msg, ferr := finalize(partialRaw)
+				if ferr != nil {
+					_ = writeSSE(w, map[string]any{"type": "error", "message": ferr.Error()})
+				} else {
+					_ = writeSSE(w, map[string]any{"type": "meta", "meta": map[string]any{
+						"assistantMessageId": msg.ID.String(),
+						"provider":           msg.Provider,
+						"model":              msg.Model,
+						"partial":            true,
+					}})
+					_ = writeSSE(w, map[string]any{"type": "cancelled"})
+				}
+				cancelStream(len(partialRaw))
+			}
+			flusher.Flush()
 			return
 		case ev, ok := <-events:
 			if !ok {
@@ -418,6 +437,8 @@ func writeAppError(w http.ResponseWriter, err error) {
 		httpx.QuotaDailyExceeded(w)
 	case errors.Is(err, domain.ErrQuotaWeeklyExceeded):
 		httpx.QuotaWeeklyExceeded(w)
+	case errors.Is(err, domain.ErrUserCancelled):
+		httpx.GenerationCancelled(w)
 	default:
 		httpx.Internal(w)
 	}
