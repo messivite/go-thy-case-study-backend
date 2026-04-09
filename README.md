@@ -238,56 +238,54 @@ Notlar:
 
 ### Observability (dosyaya log)
 
-`internal/observability` içindeki `Info` / `Warn` / `Error` ve `LLM*` helper'ları tek satırlık JSON üretir (`ts`, `level`, `event`, `fields`, ...). `OBSERVABILITY_LOG_FILE` set edilirse **aynı satırlar dosyaya append** edilir; process sonunda dosya `CloseFileLog` ile kapatılır (`cmd/api` ve `cmd/server`).
+`internal/observability` paketinde yer alan `Info`, `Warn`, `Error` ile `LLM*` ile başlayan yardımcı fonksiyonlar, yapılandırılmış tek satırlık JSON günlük kaydı üretir (`ts`, `level`, `event`, `fields`, vb.). `OBSERVABILITY_LOG_FILE` ortam değişkeni tanımlandığında aynı kayıtlar belirtilen dosyaya eşzamanlı olarak eklenir (append). Süreç sonlanırken dosya tanıtıcısı `CloseFileLog` ile kapatılır; bu davranış `cmd/api` ve `cmd/server` giriş noktalarında uygulanmaktadır.
 
-Örnek satır:
+Örnek kayıt satırı:
 
 ```json
 {"ts":"2026-04-09T12:00:00.123456789Z","level":"info","event":"llm.request","fields":{"provider":"openai","model":"gpt-4.1-mini","user_id":"...","session_id":"..."}}
 ```
 
-Üretimde dosya boyutu için logrotate / sidecar veya merkezi toplayıcı kullan; uygulama içinde rotation yok (bilinçli sade tutuş).
+Üretim ortamında dosya boyutunun yönetimi için logrotate, yan süreç (sidecar) veya merkezi günlük toplayıcı kullanılması önerilir. Bu uygulama içinde günlük döndürme (rotation) bilinçli olarak sağlanmamaktadır; mimari sade tutulmuştur.
 
 ### OpenTelemetry (trace)
 
-**Zorluk:** Orta - bu repoda **minimal** kurulum var: gelen HTTP istekleri için **server span** (chi router + `otelhttp`), export **OTLP/HTTP**. Env yoksa **hiçbir şey çalışmaz** (sıfır ek yük).
+**Kapsam:** Bu depoda dağıtılan izleme yapılandırması **temel (minimal)** düzeydedir. Gelen HTTP istekleri için sunucu tarafı span üretimi (`chi` yönlendirici ve `otelhttp` ile birlikte) ve **OTLP/HTTP** üzerinden dışa aktarım desteklenir. İlgili ortam değişkenleri tanımlı değilse izleme devreye girmez; bu sayede ek yüke maruz kalınmaz.
 
-| Env | Anlam |
+| Ortam değişkeni | Açıklama |
 |---|---|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` veya `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Ornek: `http://localhost:4318` (Collector HTTP). Tanımlı değilse tracing kapalı. |
-| `OTEL_SERVICE_NAME` | Varsayılan `thy-case-study-api`. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` veya `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Örnek değer: `http://localhost:4318` (Collector HTTP uç noktası). Tanımlı değilse dağıtılan trace özelliği etkin olmaz. |
+| `OTEL_SERVICE_NAME` | Varsayılan: `thy-case-study-api`. |
 
-Örnek Collector config bu repoda: **`otel/collector.yaml`**. Binary nerede olursa olsun **config'e tam yol** ver:
+Örnek Collector yapılandırması bu depoda **`otel/collector.yaml`** dosyasında bulunmaktadır. `otelcol` ikilisi hangi çalışma dizininden çalıştırılırsa çalıştırılsın, yapılandırma dosyasına **mutlak yol** verilmesi gerekir:
 
 ```bash
 ./otelcol --config=/ABSOLUTE/PATH/thy-case-study-backend/otel/collector.yaml
 ```
 
-(`config.yaml: no such file` hatası, komutu çalıştırdığın dizinde dosya arandığı içindir; `--config=` ile proje içindeki yolu göster.)
+`config.yaml: no such file` iletisinin görülmesi, komutun geçerli çalışma dizininde yapılandırma aranmasından kaynaklanır; `--config=` bağımsız değişkeni ile depo içindeki dosyanın tam yolu belirtilmelidir.
 
-#### OpenTelemetry Collector kurulumu (yerel test)
+#### OpenTelemetry Collector kurulumu (yerel doğrulama)
 
-1. **İndir** - Resmi sürümler [OpenTelemetry Collector releases](https://github.com/open-telemetry/opentelemetry-collector-releases/releases) sayfasında. Bu repodaki örnek config **Core** dağıtımı (`otelcol`) ile uyumludur; macOS için `otelcol_*_darwin_arm64.tar.gz` veya `*_amd64` uygun olanı seç. Daha fazla exporter/receiver gerekiyorsa aynı sayfadan **[otelcol-contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)** varlığını da kullanabilirsin. Kurulum özeti: [Collector installation](https://opentelemetry.io/docs/collector/installation/).
-2. **Arşivi aç**, `otelcol` binary'sini istediğin klasöre koy. İlk çalıştırmada macOS "bilinmeyen geliştirici" diyebilir: Finder'da sağ tık -> **Aç** veya `xattr -dr com.apple.quarantine ./otelcol`.
-3. **Collector'ı ayrı terminalde çalıştır** (pencere açık kalsın):
+1. **Dağıtım** — Güncel sürümler [OpenTelemetry Collector releases](https://github.com/open-telemetry/opentelemetry-collector-releases/releases) sayfasından edinilebilir. Bu depodaki örnek yapılandırma, **Core** dağıtımı (`otelcol`) ile uyumludur; macOS için mimariye uygun `otelcol_*_darwin_arm64.tar.gz` veya `*_amd64` paketi seçilebilir. Ek alıcı veya dışa aktarıcı gereksinimi bulunması hâlinde aynı kaynak üzerinden **[otelcol-contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)** dağıtımı değerlendirilebilir. Kurulumun özeti için bkz. [Collector installation](https://opentelemetry.io/docs/collector/installation/).
+2. **Kurulum** — Arşiv açıldıktan sonra `otelcol` ikilisi uygun bir dizine yerleştirilir. macOS üzerinde ilk çalıştırmada güvenlik uyarısı çıkması hâlinde Finder üzerinden sağ tıklayıp **Açı** seçeneği kullanılabilir veya `xattr -dr com.apple.quarantine ./otelcol` komutu uygulanabilir.
+3. **Çalıştırma** — Collector, ayrı bir terminal oturumunda sürekli çalışacak şekilde başlatılır:
 
    ```bash
    ./otelcol --config=/ABSOLUTE/PATH/thy-case-study-backend/otel/collector.yaml
    ```
 
-   Log'da `Starting HTTP server` ... `endpoint: "[::]:4318"` görünmeli.
-4. **API tarafı** - `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` (ve isteğe bağlı `OTEL_SERVICE_NAME`) tanımlı olsun; repo kökündeki `.env` içine yazabilirsin (`cmd/api` açılışta yükler) veya export / IDE env kullan.
-5. **Test** - `GET /health` ve `GET /api/health` trace üretmez; `GET /api/providers` veya `GET /api/chats` gibi korumalı bir endpoint'e JWT ile istek at. Trace çıktısı **Collector'ın çalıştığı terminalde** (`debug` exporter) görünür.
+   Günlük çıktısında `Starting HTTP server` ile `endpoint: "[::]:4318"` ifadelerinin yer alması beklenir.
+4. **API tarafı** — `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` ve gerekmesi hâlinde `OTEL_SERVICE_NAME` değerleri tanımlanmalıdır. Bu değerler depo kökündeki `.env` dosyasına yazılabilir (`cmd/api` başlangıçta yükler) veya kabuk ortamı / IDE ortam değişkenleri üzerinden iletilebilir.
+5. **Doğrulama** — `GET /health` ve `GET /api/health` uç noktaları trace üretmez. `GET /api/providers` veya `GET /api/chats` gibi kimlik doğrulaması gerektiren bir uç noktaya geçerli bir JWT ile istek gönderildiğinde, trace çıktısı Collector sürecinin standart çıktısında (`debug` exporter) gözlemlenebilir.
 
-**Örnek ekran görüntüsü** - Collector'da gelen span (bu projeden `GET /api/chats`, `debug` exporter çıktısı):
+**Örnek ekran görüntüsü** — Bu projeden `GET /api/chats` isteğine karşılık Collector `debug` exporter çıktısı:
 
 ![OpenTelemetry Collector debug exporter ile gelen trace örneği](https://i.ibb.co/VWrfvghD/Screenshot-2026-04-09-at-02-22-32.png)
 
-*(Aynı görüntü doğrudan link: [Screenshot-2026-04-09-at-02-22-32.png](https://i.ibb.co/VWrfvghD/Screenshot-2026-04-09-at-02-22-32.png))*
+*(Doğrudan bağlantı: [Screenshot-2026-04-09-at-02-22-32.png](https://i.ibb.co/VWrfvghD/Screenshot-2026-04-09-at-02-22-32.png))*
 
-Üretimde Collector'a Jaeger, Grafana Tempo, vendor OTLP uçları gibi **exporter** eklenir; yerelde sadece `debug` ile konsolda doğrulamak yeterli.
-
-**Sonraki seviye (yapılmadı):** LLM çağrıları için `usecase` içinde `otel.Tracer` ile child span, metrics, log->trace bağlama - ihtiyaç oldukça eklenebilir.
+Üretim ortamında Collector yapılandırmasına Jaeger, Grafana Tempo veya satıcı tarafı OTLP uç noktaları gibi ek **exporter** tanımları eklenmesi uygun olur; yerel doğrulama için yalnızca `debug` exporter ile konsol çıktısının incelenmesi genellikle yeterlidir.
 
 ## API Dokümantasyonu (Swagger UI)
 
