@@ -379,20 +379,6 @@ curl -N -X POST "http://localhost:8081/api/chats/<CHAT_ID>/stream" \
   }'
 ```
 
-## Faz 3 Durumu
-
-### Tamamlananlar
-
-- `thy-case-llm deploy` komutları (railway/fly/vercel şablonları)
-- LLM interaction audit kaydı (`llm_interaction_log`)
-- Token kota modeli (`llm_quota_defaults`, `user_llm_usage_quota`)
-- Profil oluşumunda quota satırı üreten trigger
-- Kota aşımında tutarlı HTTP 429 hata kodları
-
-### Planlanan
-
-- Self-hosted / özel endpoint tanımlarının provider konfigürasyonuna eklenmesi
-
 ## Deploy
 
 CLI v0.3.0+ ile deploy şablonları üretilir:
