@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/messivite/go-thy-case-study-backend/internal/app"
@@ -14,12 +15,15 @@ import (
 	"github.com/messivite/go-thy-case-study-backend/internal/chat"
 	"github.com/messivite/go-thy-case-study-backend/internal/config"
 	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
+	"github.com/messivite/go-thy-case-study-backend/internal/dotenv"
 	"github.com/messivite/go-thy-case-study-backend/internal/observability"
 	"github.com/messivite/go-thy-case-study-backend/internal/provider"
 	"github.com/messivite/go-thy-case-study-backend/internal/repo"
 )
 
 func main() {
+	dotenv.LoadLocalEnv()
+
 	if logPath := os.Getenv("OBSERVABILITY_LOG_FILE"); logPath != "" {
 		if err := observability.EnableFileLog(logPath); err != nil {
 			log.Fatalf("OBSERVABILITY_LOG_FILE: %v", err)
@@ -51,25 +55,31 @@ func main() {
 
 	serviceRoleKey := os.Getenv("SUPABASE_SERVICE_ROLE_KEY")
 	var repository domain.Repository
-	persistence := envOrDefault("CHAT_PERSISTENCE", "supabase")
+	persistence := strings.TrimSpace(envOrDefault("CHAT_PERSISTENCE", "supabase"))
+
+	var quotaRepo domain.QuotaRepository
 
 	switch persistence {
 	case "supabase":
 		if supabaseURL == "" || serviceRoleKey == "" {
 			log.Println("WARN: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY empty, falling back to memory persistence")
 			repository = repo.NewMemoryRepository()
+			quotaRepo = repo.NewMemoryQuotaRepository()
 		} else {
-			repository = repo.NewSupabaseRepository(supabaseURL, serviceRoleKey)
+			supabaseRepo := repo.NewSupabaseRepository(supabaseURL, serviceRoleKey)
+			repository = supabaseRepo
+			quotaRepo = supabaseRepo
 			log.Println("chat persistence: supabase (postgres)")
 		}
 	default:
 		repository = repo.NewMemoryRepository()
-		log.Println("chat persistence: memory (in-process)")
+		quotaRepo = repo.NewMemoryQuotaRepository()
+		log.Printf("chat persistence: memory (in-process) [CHAT_PERSISTENCE=%q]", persistence)
 	}
 
 	registry := buildRegistry()
 
-	uc := usecase.NewUseCase(repository, registry)
+	uc := usecase.NewUseCase(repository, quotaRepo, registry)
 	chatHandler := chat.NewHandler(uc)
 
 	server := app.NewServer(authService, chatHandler)

@@ -6,13 +6,25 @@
 
 ### Added
 
+- `cmd/api` ve `cmd/server`: cwd’den yukarı `.env` arayıp `godotenv.Overload` ile yükleme (`internal/dotenv`); shell’de kalmış eski export’ları `.env` ezer. `CHAT_PERSISTENCE` için `TrimSpace`.
 - `CHANGELOG.md` ve `RELEASE_NOTES.md`.
 - **`thy-case-llm deploy`:** `list`, `show <id>`, `init <id>` alt komutları; şablonlar `internal/deploy` içinde `go:embed` ile gömülü.
   - Hedefler: **`railway`** (`Dockerfile`, `railway.toml`), **`fly`** (aynı Dockerfile + `fly.toml`), **`vercel`** (örnek `vercel.json` + `deploy/VERCEL.md`; API’nin harici host’ta çalışması senaryosu).
   - `init` flag’leri: `--dry-run`, `--force`, `--out`, `--module`, `--port`, `--main-package`, `--health-path`, `--api-base-url` (vercel).
 - `internal/deploy` birim testleri (şema yükleme, dry-run, dosya çakışması, `go.mod` modül tespiti).
+- **Faz 3 — kota + audit:**
+  - `llm_quota_defaults` (singleton) + `user_llm_usage_quota` (`quota_bypass`, günlük/haftalık limit) tabloları.
+  - Profil oluşunca trigger ile kota satırı üretimi (`AFTER INSERT ON profiles`); mevcut kullanıcılar için backfill.
+  - `llm_interaction_log` üzerinde `error_code` ve `provider_http_status` sütunları.
+  - `llm_get_user_token_usage` RPC (günlük + haftalık toplam token).
+  - `QuotaRepository` domain interface + `SupabaseRepository` ve `MemoryQuotaRepository` implementasyonları.
+  - `LLMErrorCode` / `LLMHTTPStatus` hata sınıflandırma yardımcıları.
 
 ### Changed
+
+- **Mesaj kayıt sırası:** Kullanıcı mesajı artık LLM çağrısından **önce** kaydedilir; trigger `pending` audit satırı oluşturur, LLM hatası olursa RPC ile `error` işaretlenir.
+- Kota aşımında `429` + `llm_quota_daily_exceeded` / `llm_quota_weekly_exceeded` JSON kodu.
+- `NewUseCase` artık `QuotaRepository` parametresi alır.
 
 - `thy-case-llm` sürüm sabiti **v0.3.0**; `help` çıktısında komut sırası: `doctor` sonrasında `deploy` satırları.
 

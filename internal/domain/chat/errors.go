@@ -15,4 +15,7 @@ var (
 	ErrProviderRateLimited = errors.New("provider rate limit exceeded")
 	ErrProviderUnavailable = errors.New("provider temporarily unavailable")
 	ErrProviderBadRequest  = errors.New("provider rejected request")
+
+	ErrQuotaDailyExceeded  = errors.New("daily token quota exceeded")
+	ErrQuotaWeeklyExceeded = errors.New("weekly token quota exceeded")
 )
