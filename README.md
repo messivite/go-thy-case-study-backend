@@ -17,6 +17,366 @@
   <a href="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/ci.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/messivite/go-thy-case-study-backend/ci.yml?branch=main&style=for-the-badge&label=CI" alt="CI" />
   </a>
+  <a href="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/release.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/messivite/go-thy-case-study-backend/release.yml?style=for-the-badge&label=Release" alt="Release" />
+  </a>
+  <a href="https://app.codecov.io/gh/messivite/go-thy-case-study-backend">
+    <img src="https://img.shields.io/codecov/c/github/messivite/go-thy-case-study-backend?style=for-the-badge&label=Coverage" alt="Coverage" />
+  </a>
+</p>
+
+# Thy Case Study Backend
+
+Supabase tabanli kimlik dogrulama ve rol yonetimi kullanan, LLM sohbet akislarini destekleyen Go backend uygulamasi.
+
+**Surum notlari:** [CHANGELOG.md](CHANGELOG.md) - [RELEASE_NOTES.md](RELEASE_NOTES.md)
+
+## Built With gosupabase
+
+Bu proje, tarafimdan gelistirilen `gosupabase` kutuphanesi uzerine kuruludur. YAML tabanli endpoint tanimlari, JWT dogrulama ve role-based access control (RBAC) katmani `gosupabase` ile saglanir.
+
+- GitHub: [github.com/messivite/gosupabase](https://github.com/messivite/gosupabase)
+- Go Package: [pkg.go.dev/github.com/messivite/gosupabase](https://pkg.go.dev/github.com/messivite/gosupabase)
+
+## Mimari Ozeti
+
+- **Auth:** Supabase access token (`Authorization: Bearer <jwt>`)
+- **Roller:** `public.user_roles` -> hook -> JWT `claims.roles`
+- **Route bazli yetki:** `api.yaml` icindeki `roles: [...]`
+- **Profil:** `public.profiles` ve `auth.users` arasinda 1:1 iliski
+- **Chat persistence:** Varsayilan `supabase`; opsiyonel `memory`
+- **LLM:** `providers.yaml` + environment variable anahtarlari
+- **Kota ve audit:** Supabase tablolari + trigger + RPC
+
+## Proje Yapisi
+
+```text
+cmd/
+  api/main.go              -> API sunucu giris noktasi
+  server/main.go           -> gosupabase dev uyumlu giris noktasi
+  thy-case-llm/main.go     -> LLM provider ve deploy yonetim CLI'i
+internal/
+  application/chat/        -> Use-case katmani
+  auth/                    -> JWT middleware ve context yardimcilari
+  chat/                    -> HTTP handler katmani
+  config/                  -> Provider konfigurasyonu ve sablonlar
+  deploy/                  -> deploy list/show/init sablonlari
+  domain/chat/             -> Domain modelleri, interface'ler, hatalar
+  provider/                -> OpenAI/Gemini adapter'lari ve registry
+  repo/                    -> Supabase ve memory repository implementasyonlari
+providers.yaml             -> LLM provider konfigürasyonu (non-secret)
+api.yaml                   -> Endpoint tanimlari ve rol kurallari
+supabase/                  -> Migration, function ve Supabase config dosyalari
+```
+
+## Provider Konfigurasyonu
+
+Provider metadata ve gizli anahtarlar ayridir:
+
+| Dosya | Icerik | Git'e eklenir? |
+|---|---|---|
+| `providers.yaml` | Provider adi, model, env key referansi | Evet |
+| `.env` | Gercek API key degerleri | Hayir |
+
+Ornek `providers.yaml`:
+
+```yaml
+default: openai
+providers:
+  - name: openai
+    model: gpt-4o
+    env_key: OPENAI_API_KEY
+  - name: gemini
+    model: gemini-2.5-flash
+    env_key: GEMINI_API_KEY
+```
+
+Uygulama acilisinda `providers.yaml` okunur. Env key degeri bulunamayan provider kaydi atlanir ve log uyarisi uretilir.
+
+## thy-case-llm CLI
+
+Yardim:
+
+```bash
+go run ./cmd/thy-case-llm help
+```
+
+Global kurulum:
+
+```bash
+go install ./cmd/thy-case-llm
+```
+
+Tüm komutlari derleyerek kurmak:
+
+```bash
+git clone https://github.com/messivite/go-thy-case-study-backend.git
+cd go-thy-case-study-backend
+go install ./cmd/...
+```
+
+PATH'e ekleme (gerekirse):
+
+```bash
+export PATH="$(go env GOPATH)/bin:$PATH"
+thy-case-llm version
+```
+
+### Komutlar
+
+| Komut | Aciklama |
+|---|---|
+| `provider add` | Yeni provider ekler (`--template` destekler) |
+| `provider list` | Kayitli provider'lari listeler |
+| `provider remove <name>` | Provider kaydini siler |
+| `provider set-default <name>` | Varsayilan provider'i degistirir |
+| `provider validate` | Env key dogrulamasi yapar |
+| `templates list` | Yerlesik provider sablonlarini listeler |
+| `templates show <name>` | Sablon detayini gosterir |
+| `doctor` | Hizli sistem saglik kontrolu |
+| `deploy list` | Desteklenen deploy hedeflerini listeler |
+| `deploy show <id>` | Hedef ve yazilacak dosya detayini gosterir |
+| `deploy init <id>` | Sablon dosyalarini repoya yazar |
+
+### Kullanim Ornekleri
+
+```bash
+thy-case-llm provider list
+thy-case-llm templates list
+thy-case-llm templates show openai
+thy-case-llm provider add --template openai --set-default
+thy-case-llm provider validate
+thy-case-llm doctor
+```
+
+## Environment
+
+`.env.example` icindeki temel degiskenler:
+
+- `PORT` (varsayilan `8081`)
+- `CHAT_PERSISTENCE` (`supabase` veya `memory`)
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_JWT_SECRET`
+- `SUPABASE_JWT_VALIDATION_MODE` (`auto` onerilir)
+- `SUPABASE_ROLE_CLAIM_KEY`
+- `OPENAI_API_KEY`
+- `GEMINI_API_KEY`
+- `PROVIDERS_CONFIG` (varsayilan `providers.yaml`)
+- `OBSERVABILITY_LOG_FILE` (opsiyonel)
+- `OTEL_EXPORTER_OTLP_ENDPOINT` (opsiyonel)
+
+### CHAT_PERSISTENCE
+
+| Deger | Davranis |
+|---|---|
+| `supabase` veya bos | Sohbet verisi Supabase `chat_sessions` / `chat_messages` tablolarina yazilir |
+| `memory` | Veri sadece process RAM'inde tutulur; process kapaninca silinir |
+
+Notlar:
+
+- `CHAT_PERSISTENCE=supabase` iken `SUPABASE_URL` veya `SUPABASE_SERVICE_ROLE_KEY` yoksa uygulama memory moduna fallback eder.
+- `cmd/api` ve `cmd/server` acilisinda lokal `.env` dosyasini yukler (`godotenv.Overload`); dosya degerleri stale shell export degerlerinin uzerine yazilir.
+- Uretim ortaminda `.env` dosyasi yerine platform environment degiskenleri kullanilmalidir.
+
+### Observability
+
+`internal/observability` paketi JSON line formatinda log uretir. `OBSERVABILITY_LOG_FILE` ayarlanirsa ayni loglar dosyaya append edilir.
+
+### OpenTelemetry
+
+Bu repoda minimal HTTP trace entegrasyonu vardir. `OTEL_EXPORTER_OTLP_ENDPOINT` tanimli degilse tracing devreye girmez.
+
+Ornek:
+
+```bash
+./otelcol --config=/ABSOLUTE/PATH/thy-case-study-backend/otel/collector.yaml
+```
+
+## Endpointler
+
+| Metot | Endpoint | Auth | Aciklama |
+|---|---|---|---|
+| `GET` | `/health` veya `/api/health` | Hayir | Health check (`OK`) |
+| `GET` | `/api/me` | Evet | JWT'den user bilgisi |
+| `GET` | `/api/providers` | Evet | Aktif provider listesi ve default bilgi |
+| `POST` | `/api/chats` | Evet | Yeni sohbet olusturur |
+| `GET` | `/api/chats` | Evet | Sohbet listesini doner |
+| `GET` | `/api/chats/{chatID}` | Evet | Sohbet ve mesaj detaylarini doner |
+| `POST` | `/api/chats/{chatID}/messages` | Evet | Non-stream mesaj gonderir |
+| `POST` | `/api/chats/{chatID}/stream` | Evet | SSE stream mesaj gonderir |
+
+## Auth ve Rol Akisi
+
+1. Kullanici Supabase ile giris yapar ve access token alir.
+2. Hook mekanizmasi `user_roles` tablosundan rollerin JWT claim'lerine yazilmasini saglar.
+3. API token'i dogrular.
+4. Endpoint bazli rol kurallari `api.yaml` uzerinden uygulanir.
+
+Rol degisikligi sonrasinda yeni token alinmalidir.
+
+## Rol Atama
+
+Rol ekleme:
+
+```sql
+insert into public.user_roles (user_id, role)
+values ('USER_UUID_HERE'::uuid, 'editor')
+on conflict (user_id, role) do nothing;
+```
+
+Rol silme:
+
+```sql
+delete from public.user_roles
+where user_id = 'USER_UUID_HERE'::uuid
+  and role = 'admin';
+```
+
+## PostgreSQL (Supabase) Veri Modeli
+
+- `auth.users` -> Kimlik kayitlari
+- `public.profiles` -> Kullanici profil verisi (1:1)
+- `public.user_roles` -> Coklu rol iliskisi
+- `public.chat_sessions`, `public.chat_messages` -> Sohbet verisi
+- `public.llm_interaction_log` -> LLM audit ve usage logu
+- `public.llm_quota_defaults`, `public.user_llm_usage_quota` -> Kota konfigürasyonu
+
+## Supabase Kurulum
+
+Projeyi linkleme:
+
+```bash
+npx supabase link --project-ref <PROJECT_REF>
+```
+
+Migration uygulama:
+
+```bash
+npx supabase db push --linked
+```
+
+Function deploy:
+
+```bash
+npx supabase functions deploy register-push-token --project-ref <PROJECT_REF>
+```
+
+## CI ve Coverage
+
+GitHub Actions pipeline'i `build`, `test` ve `vet` adimlarini calistirir. Coverage ciktilari Codecov'a gonderilir.
+
+## Yerelde Calistirma
+
+```bash
+gosupabase dev
+```
+
+veya:
+
+```bash
+go run ./cmd/api
+```
+
+## Faz 0 Test (curl)
+
+```bash
+TOKEN="<ACCESS_TOKEN>"
+```
+
+Sohbet olusturma:
+
+```bash
+curl -X POST "http://localhost:8081/api/chats" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"ilk test chat session","provider":"gemini","model":"gemini-2.5-flash"}'
+```
+
+Mesaj gonderme (non-stream):
+
+```bash
+curl -X POST "http://localhost:8081/api/chats/<CHAT_ID>/messages" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider":"openai",
+    "model":"gpt-4.1-mini",
+    "messages":[
+      {"role":"user","content":"Merhaba"}
+    ]
+  }'
+```
+
+Mesaj gonderme (stream):
+
+```bash
+curl -N -X POST "http://localhost:8081/api/chats/<CHAT_ID>/stream" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider":"gemini",
+    "model":"gemini-2.5-flash",
+    "messages":[
+      {"role":"user","content":"Kisa bir selamlama yaz"}
+    ]
+  }'
+```
+
+## Faz 3 Durumu
+
+### Tamamlananlar
+
+- `thy-case-llm deploy` komutlari (railway/fly/vercel sablonlari)
+- LLM interaction audit kaydi (`llm_interaction_log`)
+- Token kota modeli (`llm_quota_defaults`, `user_llm_usage_quota`)
+- Profil olusumunda quota satiri ureten trigger
+- Kota asiminda tutarli HTTP 429 hata kodlari
+
+### Planlanan
+
+- Self-hosted / ozel endpoint tanimlarinin provider konfigurasyonuna eklenmesi
+
+## Deploy
+
+CLI v0.3.0+ ile deploy sablonlari uretilir:
+
+```bash
+thy-case-llm deploy list
+thy-case-llm deploy show railway
+thy-case-llm deploy init railway --dry-run
+thy-case-llm deploy init railway
+```
+
+Desteklenen hedefler:
+
+| id | Uretilen dosyalar | Not |
+|---|---|---|
+| `railway` | `Dockerfile`, `railway.toml` | Varsayilan health path `/health` |
+| `fly` | `Dockerfile`, `fly.toml` | Benzer Docker tabanli kurulum |
+| `vercel` | `vercel.json`, `deploy/VERCEL.md` | Rewrite temelli yonlendirme senaryosu |
+
+Yaygin flag'ler: `--dry-run`, `--force`, `--out`, `--port`, `--main-package`, `--health-path`, `--api-base-url`, `--module`.
+<p align="center">
+  <img src="./assets/turkiye-header.svg?v=4" alt="THY Case Study Backend" width="100%" />
+</p>
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/messivite/gosupabase">
+    <img src="https://pkg.go.dev/badge/github.com/messivite/gosupabase.svg" alt="Go Reference: gosupabase" />
+  </a>
+  <a href="https://go.dev/">
+    <img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white&style=for-the-badge" alt="Go Version" />
+  </a>
+  <a href="https://supabase.com/">
+    <img src="https://img.shields.io/badge/Supabase-Ready-3ECF8E?logo=supabase&logoColor=white&style=for-the-badge" alt="Supabase" />
+  </a>
+  <img src="https://img.shields.io/badge/JWT-HS256%20%7C%20ES256-orange?style=for-the-badge" alt="JWT" />
+  <img src="https://img.shields.io/badge/JWKS-Auto%20Fetch-2563eb?style=for-the-badge" alt="JWKS" />
+  <img src="https://img.shields.io/badge/Dev-gosupabase%20dev-16a34a?style=for-the-badge" alt="Hot Reload" />
+  <a href="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/messivite/go-thy-case-study-backend/ci.yml?branch=main&style=for-the-badge&label=CI" alt="CI" />
+  </a>
   <a href="https://github.com/messivite/go-thy-case-study-backend/actions/workflows/ci.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/messivite/go-thy-case-study-backend/ci.yml?branch=main&style=for-the-badge&label=Tests" alt="Tests" />
   </a>
@@ -48,7 +408,7 @@ THY case study için yazdığım Go backend. Auth Supabase, roller JWT claim üz
 
 ## Built With gosupabase
 
-`gosupabase` paketini ben yazdım; bu repo onun üstünde. YAML’dan endpoint, JWT doğrulama, role guard işi oradan geliyor.
+Bu proje, tarafımdan geliştirilen `gosupabase` kütüphanesi üzerine inşa edilmiştir; YAML tabanlı endpoint tanımları, JWT doğrulama ve role-based access control (RBAC) katmanı bu kütüphane üzerinden sağlanır.
 
 - GitHub: [github.com/messivite/gosupabase](https://github.com/messivite/gosupabase)
 - Go Package: [pkg.go.dev/github.com/messivite/gosupabase](https://pkg.go.dev/github.com/messivite/gosupabase)
