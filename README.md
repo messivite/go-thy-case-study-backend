@@ -27,6 +27,13 @@
 
 # THY için Case Study Kapsamında Hazırlanan Backend Side Go Projesi
 
+| Ad | Açıklama | Link |
+|---|---|---|
+| PROD API Base URL | Canlı ortamda backend API istekleri için temel adres | [http://go-thy-case-study-backend-production.up.railway.app/](http://go-thy-case-study-backend-production.up.railway.app/) |
+| PROD Swagger UI | Canlı ortamda API dokümantasyonu ve endpoint deneme ekranı | [http://go-thy-case-study-backend-production.up.railway.app/docs-a7b3c9e2f1d4](http://go-thy-case-study-backend-production.up.railway.app/docs-a7b3c9e2f1d4) |
+| DEV API Base URL | Lokal geliştirme ortamında API istekleri için temel adres | [http://localhost:8081/](http://localhost:8081/) |
+| DEV Swagger UI | Lokal ortamda API dokümantasyonu ve endpoint test ekranı | [http://localhost:8081/docs-a7b3c9e2f1d4](http://localhost:8081/docs-a7b3c9e2f1d4) |
+
 Supabase tabanlı kimlik doğrulama ve rol yönetimi kullanan, LLM sohbet akışlarını destekleyen Go backend uygulaması.
 
 **Sürüm notları:** [CHANGELOG.md](CHANGELOG.md) - [RELEASE_NOTES.md](RELEASE_NOTES.md)
@@ -196,15 +203,15 @@ Bu repoda minimal HTTP trace entegrasyonu vardır. `OTEL_EXPORTER_OTLP_ENDPOINT`
 ./otelcol --config=/ABSOLUTE/PATH/thy-case-study-backend/otel/collector.yaml
 ```
 
-## API Dokumantasyonu (Swagger UI)
+## API Dokümantasyonu (Swagger UI)
 
-Uygulama calisirken OpenAPI 3.1 tabanli interaktif API dokumantasyonuna erisebilirsiniz:
+Uygulama çalışırken OpenAPI 3.1 tabanlı interaktif API dokümantasyonuna erişebilirsiniz:
 
 ```
 http://localhost:8081/docs-a7b3c9e2f1d4
 ```
 
-Bu endpoint auth gerektirmez. Path `SWAGGER_PUBLIC_PATH` env degiskeniyle degistirilebilir.
+Bu endpoint auth gerektirmez. Path, `SWAGGER_PUBLIC_PATH` env değişkeniyle değiştirilebilir.
 
 | Path | Format |
 |---|---|
@@ -212,15 +219,33 @@ Bu endpoint auth gerektirmez. Path `SWAGGER_PUBLIC_PATH` env degiskeniyle degist
 | `{SWAGGER_PUBLIC_PATH}/openapi.json` | OpenAPI 3.1 JSON |
 | `{SWAGGER_PUBLIC_PATH}/openapi.yaml` | OpenAPI 3.1 YAML |
 
-Kaynak: `api.yaml`. OpenAPI dokumani otomatik uretimi:
+### Swagger/OpenAPI Otomatik Üretim
+
+Swagger dokümanlarının kaynağı `api.yaml` dosyasıdır. Endpoint tanımlarını burada güncellersin; çıktı dosyaları otomatik üretilir.
+
+Komut:
 
 ```bash
 make openapi
 ```
 
-Bu komut hem `docs/openapi.yaml` hem `docs/openapi.json` dosyasini yeniden uretir.
-Yeni endpoint eklersen sadece `api.yaml` + handler kodunu guncelle, sonra `make openapi` calistir.
-CI pipeline'i iki dosya icin de drift kontrolu yapar.
+Bu komut:
+- `scripts/generate_openapi.go` scriptini çalıştırır.
+- `docs/openapi.yaml` ve `docs/openapi.json` dosyalarını yeniden üretir.
+
+Önerilen akış:
+1. `api.yaml` içinde endpoint/handler/auth tanımını güncelle.
+2. İlgili handler kodunu güncelle.
+3. `make openapi` çalıştır.
+4. Üretilen `docs/openapi.yaml` ve `docs/openapi.json` dosyalarını commit et.
+
+### CI Validasyonu (Drift Kontrolü)
+
+CI sürecinde OpenAPI dosyalarının güncel kalması doğrulanır:
+- `go run ./scripts/generate_openapi.go`
+- `git diff --exit-code docs/openapi.yaml docs/openapi.json`
+
+Eğer `api.yaml` değişmiş ama üretilen dosyalar commit edilmemişse pipeline hata verir.
 
 ## Endpointler
 
