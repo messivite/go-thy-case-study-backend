@@ -418,6 +418,26 @@
       }
     },
     "/chats/{chatID}": {
+      "delete": {
+        "operationId": "deleteSession",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/chatID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "DeleteSession",
+        "tags": [
+          "misc"
+        ]
+      },
       "get": {
         "operationId": "getChat",
         "parameters": [
@@ -450,6 +470,26 @@
       }
     },
     "/chats/{chatID}/messages": {
+      "get": {
+        "operationId": "listMessages",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/chatID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "ListMessages",
+        "tags": [
+          "misc"
+        ]
+      },
       "post": {
         "operationId": "postMessage",
         "parameters": [

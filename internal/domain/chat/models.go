@@ -27,6 +27,7 @@ type ChatSession struct {
 	UserID          string
 	Title           string
 	CreatedAt       time.Time
+	DeletedAt       *time.Time
 	LastProvider    string
 	LastModel       string
 	DefaultProvider string

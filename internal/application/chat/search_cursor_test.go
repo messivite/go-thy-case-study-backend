@@ -30,3 +30,21 @@ func TestDecodeSearchCursor_Invalid(t *testing.T) {
 		t.Fatal("expected invalid cursor error")
 	}
 }
+
+func TestMessageCursorEncodeDecode_RoundTrip(t *testing.T) {
+	in := domain.MessageCursor{
+		CreatedAt: time.Date(2026, 4, 10, 12, 35, 0, 222, time.UTC),
+		MessageID: "b6eaef1a-fb57-4afd-b224-81307065cdc7",
+	}
+	token := encodeMessageCursor(in)
+	out, err := decodeMessageCursor(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out == nil {
+		t.Fatal("decoded cursor is nil")
+	}
+	if !out.CreatedAt.Equal(in.CreatedAt) || out.MessageID != in.MessageID {
+		t.Fatalf("cursor mismatch: in=%+v out=%+v", in, *out)
+	}
+}

@@ -11,6 +11,7 @@ var (
 	ErrInvalidSessionID    = errors.New("invalid session id")
 	ErrInvalidSearchCursor = errors.New("invalid search cursor")
 	ErrSearchQueryTooShort = errors.New("search query must be at least 2 characters")
+	ErrInvalidDirection    = errors.New("invalid direction")
 
 	ErrProviderAuthFailed  = errors.New("provider authentication failed")
 	ErrProviderTimeout     = errors.New("provider request timed out")

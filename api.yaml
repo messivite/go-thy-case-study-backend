@@ -3,9 +3,15 @@
 #   body:  { "title"?: string, "provider"?: string, "model"?: string }
 #   201:   { "id": string, "provider": string, "model": string }
 # GET /api/chats
-#   200:   [ { "id", "title", "provider", "model", "createdAt", "updatedAt", "lastMessagePreview" } ]
+#   200:   legacy array OR pagination object (when limit/cursor verilir):
+#          { "totalCount","hasNext","nextCursor","items":[{...}] }
 # GET /api/chats/{chatID}
-#   200:   { "id", "title", "provider", "model", "messages": [ { "role", "content", "provider"?, "model"? } ] }
+#   200:   { "id", "title", "provider", "model", "messages": [..] }
+# DELETE /api/chats/{chatID}
+#   204:   soft-delete session (deleted_at set), ownership required
+# GET /api/chats/{chatID}/messages
+#   query: limit, cursor, direction=older|newer
+#   200:   { "totalCount","hasNext","nextCursor","direction","items":[message...] }
 # POST /api/chats/{chatID}/messages
 #   body:  { "provider"?, "model"?, "content"?, "messages"? }
 #   201:   { "assistantMessage": { "role", "content", "provider", "model" }, "usage"?: object }
@@ -50,6 +56,14 @@ endpoints:
   - method: GET
     path: /chats/{chatID}
     handler: GetChat
+    auth: true
+  - method: DELETE
+    path: /chats/{chatID}
+    handler: DeleteSession
+    auth: true
+  - method: GET
+    path: /chats/{chatID}/messages
+    handler: ListMessages
     auth: true
   - method: POST
     path: /chats/{chatID}/messages

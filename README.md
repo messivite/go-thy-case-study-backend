@@ -344,8 +344,10 @@ Eğer `api.yaml` değişmiş ama üretilen dosyalar commit edilmemişse pipeline
 | `GET` | `/api/chats/search?q=...&limit=...&cursor=...` | Evet | Kullanıcıya ait sohbetlerde title + user/assistant mesaj araması (cursor pagination) |
 | `GET` | `/api/providers` | Evet | Aktif provider listesi ve default bilgi |
 | `POST` | `/api/chats` | Evet | Yeni sohbet oluşturur |
-| `GET` | `/api/chats` | Evet | Sohbet listesini döner |
+| `GET` | `/api/chats` | Evet | Sohbet listesi (opsiyonel `limit` + `cursor` ile infinite-scroll pagination) |
 | `GET` | `/api/chats/{chatID}` | Evet | Sohbet ve mesaj detaylarını döner |
+| `DELETE` | `/api/chats/{chatID}` | Evet | Sohbeti soft-delete eder (`deleted_at` set edilir) |
+| `GET` | `/api/chats/{chatID}/messages` | Evet | Mesajları `direction=older|newer` + `cursor` ile iki yönlü sayfalar |
 | `POST` | `/api/chats/{chatID}/messages` | Evet | Non-stream mesaj gönderir |
 | `POST` | `/api/chats/{chatID}/stream` | Evet | SSE stream mesaj gönderir |
 

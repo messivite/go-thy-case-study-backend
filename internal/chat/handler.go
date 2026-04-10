@@ -94,6 +94,21 @@ type chatListItemResponse struct {
 	LastMessagePreview string `json:"lastMessagePreview"`
 }
 
+type chatListPageResponse struct {
+	TotalCount int                    `json:"totalCount"`
+	HasNext    bool                   `json:"hasNext"`
+	NextCursor string                 `json:"nextCursor,omitempty"`
+	Items      []chatListItemResponse `json:"items"`
+}
+
+type messagesPageResponse struct {
+	TotalCount int           `json:"totalCount"`
+	HasNext    bool          `json:"hasNext"`
+	NextCursor string        `json:"nextCursor,omitempty"`
+	Direction  string        `json:"direction"`
+	Items      []chatMessage `json:"items"`
+}
+
 type listProvidersResponse struct {
 	Default   string             `json:"default"`
 	Providers []providerInfoItem `json:"providers"`
@@ -303,14 +318,50 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessions, err := h.uc.ListSessions(r.Context(), user.UserID)
+	limit := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			httpx.BadRequest(w, "invalid limit")
+			return
+		}
+		limit = v
+	}
+	cursor := r.URL.Query().Get("cursor")
+
+	// Backward compatible: no query => legacy array response
+	if limit == 0 && strings.TrimSpace(cursor) == "" {
+		sessions, err := h.uc.ListSessions(r.Context(), user.UserID)
+		if err != nil {
+			writeAppError(w, err)
+			return
+		}
+		items := make([]chatListItemResponse, 0, len(sessions))
+		for _, s := range sessions {
+			lastPreview, updatedAt := h.uc.GetSessionSummary(r.Context(), s.ID.String())
+			lp, lm := sessionLLMSummary(s)
+			items = append(items, chatListItemResponse{
+				ID:                 s.ID.String(),
+				Title:              s.Title,
+				Provider:           lp,
+				Model:              lm,
+				CreatedAt:          s.CreatedAt.Format(timeFormat),
+				UpdatedAt:          updatedAt.Format(timeFormat),
+				LastMessagePreview: lastPreview,
+			})
+		}
+		writeJSON(w, http.StatusOK, items)
+		return
+	}
+
+	page, err := h.uc.ListSessionsPage(r.Context(), user.UserID, limit, cursor)
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
-	items := make([]chatListItemResponse, 0, len(sessions))
-	for _, s := range sessions {
-		lastPreview, updatedAt := h.uc.GetSessionSummary(r.Context(), s.ID.String())
+	items := make([]chatListItemResponse, 0, len(page.Items))
+	for _, it := range page.Items {
+		s := it.Session
 		lp, lm := sessionLLMSummary(s)
 		items = append(items, chatListItemResponse{
 			ID:                 s.ID.String(),
@@ -318,11 +369,16 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 			Provider:           lp,
 			Model:              lm,
 			CreatedAt:          s.CreatedAt.Format(timeFormat),
-			UpdatedAt:          updatedAt.Format(timeFormat),
-			LastMessagePreview: lastPreview,
+			UpdatedAt:          it.UpdatedAt.Format(timeFormat),
+			LastMessagePreview: it.LastMessagePreview,
 		})
 	}
-	writeJSON(w, http.StatusOK, items)
+	writeJSON(w, http.StatusOK, chatListPageResponse{
+		TotalCount: page.TotalCount,
+		HasNext:    page.HasNext,
+		NextCursor: page.NextCursor,
+		Items:      items,
+	})
 }
 
 func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
@@ -351,6 +407,20 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) DeleteSession(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.AuthenticatedUserFromContext(r.Context())
+	if !ok {
+		httpx.Unauthorized(w)
+		return
+	}
+	chatID := chi.URLParam(r, "chatID")
+	if err := h.uc.DeleteSession(r.Context(), user.UserID, chatID); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.AuthenticatedUserFromContext(r.Context())
 	if !ok {
@@ -358,13 +428,31 @@ func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID := chi.URLParam(r, "sessionID")
-	messages, err := h.uc.GetSessionMessages(r.Context(), user.UserID, sessionID)
+	chatID := chi.URLParam(r, "chatID")
+	limit := 30
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			httpx.BadRequest(w, "invalid limit")
+			return
+		}
+		limit = v
+	}
+	direction := strings.TrimSpace(r.URL.Query().Get("direction"))
+	cursor := r.URL.Query().Get("cursor")
+
+	page, err := h.uc.GetChatMessagesPage(r.Context(), user.UserID, chatID, limit, direction, cursor)
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toAPIMessages(messages))
+	writeJSON(w, http.StatusOK, messagesPageResponse{
+		TotalCount: page.TotalCount,
+		HasNext:    page.HasNext,
+		NextCursor: page.NextCursor,
+		Direction:  page.Direction,
+		Items:      toAPIMessages(page.Messages),
+	})
 }
 
 func (h *Handler) GetChat(w http.ResponseWriter, r *http.Request) {
@@ -685,7 +773,7 @@ func writeAppError(w http.ResponseWriter, err error) {
 		httpx.Forbidden(w)
 	case errors.Is(err, domain.ErrMissingContent), errors.Is(err, domain.ErrInvalidRole):
 		httpx.BadRequest(w, err.Error())
-	case errors.Is(err, domain.ErrInvalidSessionID), errors.Is(err, domain.ErrInvalidSearchCursor), errors.Is(err, domain.ErrSearchQueryTooShort):
+	case errors.Is(err, domain.ErrInvalidSessionID), errors.Is(err, domain.ErrInvalidSearchCursor), errors.Is(err, domain.ErrSearchQueryTooShort), errors.Is(err, domain.ErrInvalidDirection):
 		httpx.BadRequest(w, err.Error())
 	case errors.Is(err, domain.ErrSessionNotFound):
 		httpx.NotFound(w, err.Error())
