@@ -89,27 +89,6 @@
         ],
         "type": "object"
       },
-      "AuthenticatedUser": {
-        "properties": {
-          "Email": {
-            "format": "email",
-            "type": "string"
-          },
-          "Role": {
-            "type": "string"
-          },
-          "UserID": {
-            "format": "uuid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "UserID",
-          "Email",
-          "Role"
-        ],
-        "type": "object"
-      },
       "ChatDetail": {
         "properties": {
           "id": {
@@ -279,6 +258,73 @@
         "required": [
           "default",
           "providers"
+        ],
+        "type": "object"
+      },
+      "Me": {
+        "description": "Mevcut access token özeti. claims alanı decode edilmiş JWT payload'ının tamamıdır\n(Supabase: sub, email, role, app_metadata, user_metadata, session_id, exp, …).\n",
+        "properties": {
+          "appMetadata": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "aud": {
+            "type": "string"
+          },
+          "claims": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "exp": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "iat": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "iss": {
+            "type": "string"
+          },
+          "issuedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "role": {
+            "description": "RBAC için kullanılan birincil rol (SUPABASE_ROLE_CLAIM_KEY)",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "userMetadata": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "id"
         ],
         "type": "object"
       },
@@ -650,7 +696,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AuthenticatedUser"
+                  "$ref": "#/components/schemas/Me"
                 }
               }
             },

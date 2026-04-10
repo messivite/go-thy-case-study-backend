@@ -179,7 +179,54 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		httpx.Unauthorized(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, user)
+	writeJSON(w, http.StatusOK, toMeResponse(user))
+}
+
+// meResponse is GET /api/me — normalized fields plus full JWT payload under claims.
+type meResponse struct {
+	ID               string         `json:"id"`
+	Email            string         `json:"email,omitempty"`
+	Role             string         `json:"role,omitempty"`
+	Roles            []string       `json:"roles,omitempty"`
+	Issuer           string         `json:"iss,omitempty"`
+	Audience         string         `json:"aud,omitempty"`
+	IssuedAt         int64          `json:"iat,omitempty"`
+	ExpiresAt        int64          `json:"exp,omitempty"`
+	IssuedAtRFC3339  string         `json:"issuedAt,omitempty"`
+	ExpiresAtRFC3339 string         `json:"expiresAt,omitempty"`
+	Phone            string         `json:"phone,omitempty"`
+	SessionID        string         `json:"sessionId,omitempty"`
+	AppMetadata      map[string]any `json:"appMetadata,omitempty"`
+	UserMetadata     map[string]any `json:"userMetadata,omitempty"`
+	Claims           map[string]any `json:"claims,omitempty"`
+}
+
+func toMeResponse(u *auth.AuthenticatedUser) meResponse {
+	if u == nil {
+		return meResponse{}
+	}
+	out := meResponse{
+		ID:           u.UserID,
+		Email:        u.Email,
+		Role:         u.Role,
+		Roles:        u.Roles,
+		Issuer:       u.Issuer,
+		Audience:     u.Audience,
+		IssuedAt:     u.IssuedAt,
+		ExpiresAt:    u.ExpiresAt,
+		Phone:        u.Phone,
+		SessionID:    u.SessionID,
+		AppMetadata:  u.AppMetadata,
+		UserMetadata: u.UserMetadata,
+		Claims:       u.JWTClaims,
+	}
+	if u.IssuedAt > 0 {
+		out.IssuedAtRFC3339 = time.Unix(u.IssuedAt, 0).UTC().Format(time.RFC3339)
+	}
+	if u.ExpiresAt > 0 {
+		out.ExpiresAtRFC3339 = time.Unix(u.ExpiresAt, 0).UTC().Format(time.RFC3339)
+	}
+	return out
 }
 
 type meUsageResponse struct {

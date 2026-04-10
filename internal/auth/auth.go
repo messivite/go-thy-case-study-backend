@@ -9,10 +9,23 @@ import (
 	"github.com/messivite/go-thy-case-study-backend/internal/httpx"
 )
 
+// AuthenticatedUser is filled by AuthService (e.g. Supabase JWT). Me handler
+// maps this to a richer JSON shape; handlers should use UserID / Email / Role for RBAC.
 type AuthenticatedUser struct {
-	UserID string
-	Email  string
-	Role   string
+	UserID       string
+	Email        string
+	Role         string
+	Roles        []string
+	Issuer       string
+	Audience     string
+	IssuedAt     int64
+	ExpiresAt    int64
+	Phone        string
+	SessionID    string
+	AppMetadata  map[string]any
+	UserMetadata map[string]any
+	// JWTClaims is the full decoded access-token payload (registered + custom claims).
+	JWTClaims map[string]any
 }
 
 type AuthService interface {

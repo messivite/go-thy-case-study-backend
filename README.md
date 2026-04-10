@@ -58,6 +58,7 @@ Bu proje, tarafımdan geliştirilen `gosupabase` kütüphanesi üzerine kuruludu
 - **Route bazlı yetki:** `api.yaml` içindeki `roles: [...]`
 - **Profil:** `public.profiles` ve `auth.users` arasında 1:1 ilişki
 - **Chat persistence:** Varsayılan `supabase`; opsiyonel `memory`
+- **HTTP yanıt önbelleği (opsiyonel):** `GET /api/chats` ve `GET /api/chats/{id}/messages` için env ile açılır (`memory` veya `redis`)
 - **LLM:** `providers.yaml` + environment variable anahtarları
 - **Kota ve audit:** Supabase tabloları + trigger + RPC
 
@@ -147,6 +148,7 @@ thy-case-llm version
 | `templates list` | Yerleşik provider şablonlarını listeler |
 | `templates show <name>` | Şablon detayını gösterir |
 | `doctor` | Hızlı sistem sağlık kontrolü |
+| `cache config` | HTTP yanıt önbelleği için `.env` içine `CACHE_*` / `REDIS_*` yazar (interaktif) |
 | `deploy list` | Desteklenen deploy hedeflerini listeler |
 | `deploy show <id>` | Hedef ve yazılacak dosya detayını gösterir |
 | `deploy init <id>` | Şablon dosyalarını repoya yazar |
@@ -225,6 +227,7 @@ go run ./cmd/thy-case-llm doctor
 - `OBSERVABILITY_LOG_FILE` (opsiyonel)
 - `OTEL_EXPORTER_OTLP_ENDPOINT` (opsiyonel)
 - `SWAGGER_PUBLIC_PATH` (varsayilan `/docs-thy-case-study-backend`)
+- Önbellek: `CACHE_ENABLED`, `CACHE_BACKEND`, `CACHE_TTL_*`, `REDIS_*` (detay için aşağıdaki **Cache** bölümüne bak)
 
 ### CHAT_PERSISTENCE
 
@@ -289,6 +292,60 @@ Notlar:
 *(Doğrudan bağlantı: [Screenshot-2026-04-09-at-02-22-32.png](https://i.ibb.co/VWrfvghD/Screenshot-2026-04-09-at-02-22-32.png))*
 
 Üretim ortamında Collector yapılandırmasına Jaeger, Grafana Tempo veya satıcı tarafı OTLP uç noktaları gibi ek **exporter** tanımları eklenmesi uygun olur; yerel doğrulama için yalnızca `debug` exporter ile konsol çıktısının incelenmesi genellikle yeterlidir.
+
+## Cache
+
+Bunu ben **sunucu tarafında**, sık tekrarlanan okuma isteklerini hafifletmek için ekledim: aynı kullanıcı aynı endpoint’e tekrar geldiğinde (TTL süresi içinde) cevabı doğrudan bellekten veya Redis’ten dönüyoruz; böylece her seferinde DB’ye gitmek zorunda kalmıyorsun. Bu bir **HTTP yanıt önbelleği**; istemci tarafında ekstra bir şey yapmana gerek yok.
+
+**Ne önbelleniyor?**
+
+- `GET /api/chats` — sohbet listesi (legacy dizi veya sayfalı cevap; **query string** farklıysa ayrı anahtar, birbirinin üstüne binmez).
+- `GET /api/chats/{chatID}/messages` — sayfalı mesaj listesi (yine query’ye göre ayrı entry).
+
+**Nasıl yönetiyorum?**
+
+- Tamamen **ortam değişkeni** ile. `api.yaml` veya Swagger’da bir “cache toggle” yok; deploy ortamında env set ediyorsun, sunucu açılışında `internal/cache.FromEnv()` okuyor.
+- İstersen elle `.env` yazarsın, istersen repodaki CLI ile interaktif doldurursun:
+
+```bash
+thy-case-llm cache config
+```
+
+Bu komut `.env` içine (veya `ENV_FILE` neyse ona) işaretli bir blok halinde `CACHE_*` / gerekiyorsa `REDIS_*` yazar; tekrar çalıştırınca aynı bloğu günceller.
+
+**Backend seçenekleri**
+
+| Değer | Ne zaman? |
+| --- | --- |
+| `memory` (varsayılan) | Tek process / tek makine; en basit kurulum, ek servis yok. |
+| `redis` | Birden fazla API instance veya Redis’i merkezi cache olarak kullanmak istediğinde; tüm pod’lar aynı Redis’i görür. |
+
+**Invalidation (ne zaman sıfırlanıyor?)**
+
+Veri değişince ilgili kullanıcı için liste ve/veya o sohbetin mesaj önbelleği temizleniyor: yeni sohbet, mesaj gönderme, stream’in bitmesi, sync, soft-delete vb. Böylece eski JSON’u yanlışlıkla uzun süre servis etmiyoruz.
+
+**Örnek env (memory, açık)**
+
+```bash
+CACHE_ENABLED=true
+CACHE_BACKEND=memory
+CACHE_TTL_CHAT_LIST_SEC=20
+CACHE_TTL_CHAT_MESSAGES_SEC=15
+```
+
+**Örnek env (redis)**
+
+```bash
+CACHE_ENABLED=true
+CACHE_BACKEND=redis
+CACHE_TTL_CHAT_LIST_SEC=20
+CACHE_TTL_CHAT_MESSAGES_SEC=15
+REDIS_ADDR=127.0.0.1:6379
+REDIS_DB=0
+# REDIS_PASSWORD=   # gerekiyorsa
+```
+
+Kapalı tutmak için `CACHE_ENABLED`’ı verme veya `false` yapman yeterli; geri kanıt akışı eskisi gibi çalışır.
 
 ## API Dokümantasyonu (Swagger UI)
 

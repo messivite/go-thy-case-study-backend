@@ -1,8 +1,6 @@
 package auth
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -51,11 +49,51 @@ func (a *SupabaseAuthAdapter) AuthenticateRequest(r *http.Request) (*Authenticat
 		return nil, errors.New("missing user identifier in token")
 	}
 
-	return &AuthenticatedUser{
+	user := &AuthenticatedUser{
 		UserID: claims.Subject,
 		Email:  claims.Email,
 		Role:   a.extractRole(validatedReq, claims),
-	}, nil
+	}
+	raw, err := ParseAccessTokenPayload(r)
+	if err == nil {
+		user.JWTClaims = raw
+		applyJWTExtras(user, claims, raw)
+	} else {
+		applyJWTExtras(user, claims, nil)
+	}
+	return user, nil
+}
+
+func applyJWTExtras(u *AuthenticatedUser, claims *gosupabaseauth.Claims, raw map[string]any) {
+	if claims != nil {
+		u.Roles = claims.EffectiveRoles()
+		u.Audience = claims.Audience
+		u.ExpiresAt = claims.ExpiresAt
+	}
+	if raw == nil {
+		return
+	}
+	if v, ok := jwtNumericInt64(raw, "iat"); ok {
+		u.IssuedAt = v
+	}
+	if v, ok := jwtNumericInt64(raw, "exp"); ok && u.ExpiresAt == 0 {
+		u.ExpiresAt = v
+	}
+	if s, ok := raw["iss"].(string); ok {
+		u.Issuer = s
+	}
+	if s, ok := raw["phone"].(string); ok {
+		u.Phone = s
+	}
+	if s, ok := raw["session_id"].(string); ok {
+		u.SessionID = s
+	}
+	if m, ok := metadataMap(raw["app_metadata"]); ok {
+		u.AppMetadata = m
+	}
+	if m, ok := metadataMap(raw["user_metadata"]); ok {
+		u.UserMetadata = m
+	}
 }
 
 func (a *SupabaseAuthAdapter) extractRole(r *http.Request, claims *gosupabaseauth.Claims) string {
@@ -77,23 +115,8 @@ func (a *SupabaseAuthAdapter) extractRole(r *http.Request, claims *gosupabaseaut
 }
 
 func extractClaimFromToken(r *http.Request, claimKey string) (string, error) {
-	token, err := ExtractBearerToken(r)
+	raw, err := ParseAccessTokenPayload(r)
 	if err != nil {
-		return "", err
-	}
-
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return "", errors.New("invalid token format")
-	}
-
-	payload, err := base64URLDecode(parts[1])
-	if err != nil {
-		return "", err
-	}
-
-	var raw map[string]any
-	if err := json.Unmarshal(payload, &raw); err != nil {
 		return "", err
 	}
 
@@ -114,11 +137,4 @@ func extractClaimFromToken(r *http.Request, claimKey string) (string, error) {
 	}
 
 	return fmt.Sprintf("%v", value), nil
-}
-
-func base64URLDecode(s string) ([]byte, error) {
-	if m := len(s) % 4; m != 0 {
-		s += strings.Repeat("=", 4-m)
-	}
-	return base64.URLEncoding.DecodeString(s)
 }

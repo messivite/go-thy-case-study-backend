@@ -125,7 +125,7 @@ func operationFor(e Endpoint) string {
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthenticatedUser"
+                $ref: "#/components/schemas/Me"
         "401":
           $ref: "#/components/responses/Unauthorized"
 `, m, sec)
@@ -327,13 +327,28 @@ paths:
         type: string
         format: uuid
   schemas:
-    AuthenticatedUser:
+    Me:
       type: object
+      description: |
+        Mevcut access token özeti. claims alanı decode edilmiş JWT payload'ının tamamıdır
+        (Supabase: sub, email, role, app_metadata, user_metadata, session_id, exp, …).
       properties:
-        UserID: { type: string, format: uuid }
-        Email: { type: string, format: email }
-        Role: { type: string }
-      required: [UserID, Email, Role]
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { type: string, description: RBAC için kullanılan birincil rol (SUPABASE_ROLE_CLAIM_KEY) }
+        roles: { type: array, items: { type: string } }
+        iss: { type: string }
+        aud: { type: string }
+        iat: { type: integer, format: int64 }
+        exp: { type: integer, format: int64 }
+        issuedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        phone: { type: string }
+        sessionId: { type: string }
+        appMetadata: { type: object, additionalProperties: true }
+        userMetadata: { type: object, additionalProperties: true }
+        claims: { type: object, additionalProperties: true }
+      required: [id]
     ProviderInfo:
       type: object
       properties:
