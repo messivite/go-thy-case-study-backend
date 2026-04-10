@@ -262,7 +262,87 @@
         "type": "object"
       },
       "Me": {
-        "description": "Mevcut access token özeti. claims alanı decode edilmiş JWT payload'ının tamamıdır\n(Supabase: sub, email, role, app_metadata, user_metadata, session_id, exp, …).\n",
+        "description": "Kimlik (user) + uygulama profili (profile).",
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/MeProfile"
+          },
+          "user": {
+            "$ref": "#/components/schemas/MeUser"
+          }
+        },
+        "required": [
+          "user",
+          "profile"
+        ],
+        "type": "object"
+      },
+      "MeProfile": {
+        "description": "public.profiles satırı (display_name, avatar_url, tercihler, …).",
+        "properties": {
+          "avatarUrl": {
+            "format": "uri",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "isAnonymous": {
+            "type": "boolean"
+          },
+          "lastSeenAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "onboardingCompleted": {
+            "type": "boolean"
+          },
+          "preferredModel": {
+            "type": "string"
+          },
+          "preferredProvider": {
+            "type": "string"
+          },
+          "role": {
+            "description": "profiles.role (user | admin | moderator)",
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "isActive",
+          "onboardingCompleted",
+          "isAnonymous"
+        ],
+        "type": "object"
+      },
+      "MeUser": {
+        "description": "JWT / access token özeti (gosupabase doğrulaması sonrası).",
         "properties": {
           "appMetadata": {
             "additionalProperties": true,
@@ -270,10 +350,6 @@
           },
           "aud": {
             "type": "string"
-          },
-          "claims": {
-            "additionalProperties": true,
-            "type": "object"
           },
           "email": {
             "format": "email",
@@ -306,7 +382,7 @@
             "type": "string"
           },
           "role": {
-            "description": "RBAC için kullanılan birincil rol (SUPABASE_ROLE_CLAIM_KEY)",
+            "description": "RBAC birincil rol (SUPABASE_ROLE_CLAIM_KEY)",
             "type": "string"
           },
           "roles": {

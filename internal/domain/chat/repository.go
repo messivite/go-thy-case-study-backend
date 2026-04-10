@@ -21,4 +21,5 @@ type Repository interface {
 	GetMessagesBySession(ctx context.Context, sessionID string) ([]ChatMessage, error)
 	GetMessagesBySessionPage(ctx context.Context, sessionID string, limit int, direction string, cursor *MessageCursor) ([]ChatMessage, int, error)
 	SearchChats(ctx context.Context, params SearchChatParams) (SearchChatsResult, error)
+	GetUserProfile(ctx context.Context, userID string) (UserProfile, error)
 }

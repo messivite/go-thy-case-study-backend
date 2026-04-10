@@ -254,28 +254,52 @@ components:
         type: string
         format: uuid
   schemas:
-    Me:
+    MeUser:
       type: object
-      description: |
-        Mevcut access token özeti. claims alanı decode edilmiş JWT payload'ının tamamıdır
-        (Supabase: sub, email, role, app_metadata, user_metadata, session_id, exp, …).
+      description: JWT / access token özeti (gosupabase doğrulaması sonrası).
       properties:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
-        role: { type: string, description: RBAC için kullanılan birincil rol (SUPABASE_ROLE_CLAIM_KEY) }
+        role: { type: string, description: RBAC birincil rol (SUPABASE_ROLE_CLAIM_KEY) }
         roles: { type: array, items: { type: string } }
+        phone: { type: string }
+        sessionId: { type: string }
         iss: { type: string }
         aud: { type: string }
         iat: { type: integer, format: int64 }
         exp: { type: integer, format: int64 }
         issuedAt: { type: string, format: date-time }
         expiresAt: { type: string, format: date-time }
-        phone: { type: string }
-        sessionId: { type: string }
         appMetadata: { type: object, additionalProperties: true }
         userMetadata: { type: object, additionalProperties: true }
-        claims: { type: object, additionalProperties: true }
       required: [id]
+    MeProfile:
+      type: object
+      description: public.profiles satırı (display_name, avatar_url, tercihler, …).
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        avatarUrl: { type: string, format: uri }
+        role: { type: string, description: profiles.role (user | admin | moderator) }
+        isActive: { type: boolean }
+        preferredProvider: { type: string }
+        preferredModel: { type: string }
+        locale: { type: string }
+        timezone: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        lastSeenAt: { type: string, format: date-time }
+        onboardingCompleted: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        isAnonymous: { type: boolean }
+      required: [id, isActive, onboardingCompleted, isAnonymous]
+    Me:
+      type: object
+      description: Kimlik (user) + uygulama profili (profile).
+      properties:
+        user: { $ref: "#/components/schemas/MeUser" }
+        profile: { $ref: "#/components/schemas/MeProfile" }
+      required: [user, profile]
     ProviderInfo:
       type: object
       properties:

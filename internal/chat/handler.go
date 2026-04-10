@@ -179,54 +179,110 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		httpx.Unauthorized(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, toMeResponse(user))
+	prof, err := h.uc.GetUserProfile(r.Context(), user.UserID)
+	if err != nil {
+		httpx.Internal(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, toMeResponse(user, prof))
 }
 
-// meResponse is GET /api/me — normalized fields plus full JWT payload under claims.
+// meResponse is GET /api/me — JWT özeti (user) + public.profiles satırı (profile).
 type meResponse struct {
+	User    meUserSection    `json:"user"`
+	Profile meProfileSection `json:"profile"`
+}
+
+type meUserSection struct {
 	ID               string         `json:"id"`
 	Email            string         `json:"email,omitempty"`
 	Role             string         `json:"role,omitempty"`
 	Roles            []string       `json:"roles,omitempty"`
+	Phone            string         `json:"phone,omitempty"`
+	SessionID        string         `json:"sessionId,omitempty"`
 	Issuer           string         `json:"iss,omitempty"`
 	Audience         string         `json:"aud,omitempty"`
 	IssuedAt         int64          `json:"iat,omitempty"`
 	ExpiresAt        int64          `json:"exp,omitempty"`
 	IssuedAtRFC3339  string         `json:"issuedAt,omitempty"`
 	ExpiresAtRFC3339 string         `json:"expiresAt,omitempty"`
-	Phone            string         `json:"phone,omitempty"`
-	SessionID        string         `json:"sessionId,omitempty"`
 	AppMetadata      map[string]any `json:"appMetadata,omitempty"`
 	UserMetadata     map[string]any `json:"userMetadata,omitempty"`
-	Claims           map[string]any `json:"claims,omitempty"`
 }
 
-func toMeResponse(u *auth.AuthenticatedUser) meResponse {
-	if u == nil {
-		return meResponse{}
-	}
+type meProfileSection struct {
+	ID                  string         `json:"id"`
+	DisplayName         string         `json:"displayName,omitempty"`
+	AvatarURL           string         `json:"avatarUrl,omitempty"`
+	Role                string         `json:"role,omitempty"`
+	IsActive            bool           `json:"isActive"`
+	PreferredProvider   string         `json:"preferredProvider,omitempty"`
+	PreferredModel      string         `json:"preferredModel,omitempty"`
+	Locale              string         `json:"locale,omitempty"`
+	Timezone            string         `json:"timezone,omitempty"`
+	Metadata            map[string]any `json:"metadata,omitempty"`
+	LastSeenAt          string         `json:"lastSeenAt,omitempty"`
+	OnboardingCompleted bool           `json:"onboardingCompleted"`
+	CreatedAt           string         `json:"createdAt,omitempty"`
+	UpdatedAt           string         `json:"updatedAt,omitempty"`
+	IsAnonymous         bool           `json:"isAnonymous"`
+}
+
+func toMeResponse(u *auth.AuthenticatedUser, p domain.UserProfile) meResponse {
 	out := meResponse{
-		ID:           u.UserID,
-		Email:        u.Email,
-		Role:         u.Role,
-		Roles:        u.Roles,
-		Issuer:       u.Issuer,
-		Audience:     u.Audience,
-		IssuedAt:     u.IssuedAt,
-		ExpiresAt:    u.ExpiresAt,
-		Phone:        u.Phone,
-		SessionID:    u.SessionID,
-		AppMetadata:  u.AppMetadata,
-		UserMetadata: u.UserMetadata,
-		Claims:       u.JWTClaims,
+		User:    meUserSection{},
+		Profile: toMeProfileSection(p),
 	}
-	if u.IssuedAt > 0 {
-		out.IssuedAtRFC3339 = time.Unix(u.IssuedAt, 0).UTC().Format(time.RFC3339)
-	}
-	if u.ExpiresAt > 0 {
-		out.ExpiresAtRFC3339 = time.Unix(u.ExpiresAt, 0).UTC().Format(time.RFC3339)
+	if u != nil {
+		out.User = meUserSection{
+			ID:           u.UserID,
+			Email:        u.Email,
+			Role:         u.Role,
+			Roles:        u.Roles,
+			Phone:        u.Phone,
+			SessionID:    u.SessionID,
+			Issuer:       u.Issuer,
+			Audience:     u.Audience,
+			IssuedAt:     u.IssuedAt,
+			ExpiresAt:    u.ExpiresAt,
+			AppMetadata:  u.AppMetadata,
+			UserMetadata: u.UserMetadata,
+		}
+		if u.IssuedAt > 0 {
+			out.User.IssuedAtRFC3339 = time.Unix(u.IssuedAt, 0).UTC().Format(time.RFC3339)
+		}
+		if u.ExpiresAt > 0 {
+			out.User.ExpiresAtRFC3339 = time.Unix(u.ExpiresAt, 0).UTC().Format(time.RFC3339)
+		}
 	}
 	return out
+}
+
+func toMeProfileSection(p domain.UserProfile) meProfileSection {
+	sec := meProfileSection{
+		ID:                  p.ID,
+		DisplayName:         p.DisplayName,
+		AvatarURL:           p.AvatarURL,
+		Role:                p.Role,
+		IsActive:            p.IsActive,
+		PreferredProvider:   p.PreferredProvider,
+		PreferredModel:      p.PreferredModel,
+		Locale:              p.Locale,
+		Timezone:            p.Timezone,
+		Metadata:            p.Metadata,
+		OnboardingCompleted: p.OnboardingCompleted,
+		IsAnonymous:         p.IsAnonymous,
+	}
+	if p.LastSeenAt != nil {
+		sec.LastSeenAt = p.LastSeenAt.UTC().Format(time.RFC3339Nano)
+	}
+	if !p.CreatedAt.IsZero() {
+		sec.CreatedAt = p.CreatedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if !p.UpdatedAt.IsZero() {
+		sec.UpdatedAt = p.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	}
+	return sec
 }
 
 type meUsageResponse struct {
