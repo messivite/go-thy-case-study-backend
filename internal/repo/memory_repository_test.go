@@ -271,3 +271,50 @@ func TestMemoryRepositoryGetChatSessionsByUserPage_longPreviewSkipsDeleted(t *te
 		t.Fatalf("expected preview keep-me after soft-delete last msg, items=%+v", page2.Items)
 	}
 }
+
+func TestMemoryRepositorySupportedModels_syncListSortAndActive(t *testing.T) {
+	r := NewMemoryRepository()
+	ctx := context.Background()
+
+	if err := r.SyncSupportedModels(ctx, []domain.SupportedModel{
+		{Provider: "z", ModelID: "m2", DisplayName: "Z2", SupportsStream: false},
+		{Provider: "a", ModelID: "m1", DisplayName: "A1", SupportsStream: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := r.ListActiveSupportedModels(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("list len: %d", len(list))
+	}
+	if list[0].Provider != "a" || list[0].ModelID != "m1" {
+		t.Fatalf("expected first a/m1, got %s/%s", list[0].Provider, list[0].ModelID)
+	}
+	if list[1].Provider != "z" || list[1].ModelID != "m2" {
+		t.Fatalf("expected second z/m2, got %s/%s", list[1].Provider, list[1].ModelID)
+	}
+
+	ok, err := r.IsModelActive(ctx, "A", "m1")
+	if err != nil || !ok {
+		t.Fatalf("IsModelActive A/m1: ok=%v err=%v", ok, err)
+	}
+	ok, err = r.IsModelActive(ctx, "a", "  m1  ")
+	if err != nil || !ok {
+		t.Fatalf("IsModelActive trim: ok=%v err=%v", ok, err)
+	}
+	ok, err = r.IsModelActive(ctx, "a", "missing")
+	if err != nil || ok {
+		t.Fatalf("IsModelActive missing: ok=%v err=%v", ok, err)
+	}
+	ok, err = r.IsModelActive(ctx, "", "m1")
+	if err != nil || ok {
+		t.Fatalf("IsModelActive empty provider: ok=%v err=%v", ok, err)
+	}
+	ok, err = r.IsModelActive(ctx, "a", "")
+	if err != nil || ok {
+		t.Fatalf("IsModelActive empty model: ok=%v err=%v", ok, err)
+	}
+}
