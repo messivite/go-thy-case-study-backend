@@ -60,7 +60,28 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /chats/search:
+    get:
+      tags: [misc]
+      summary: SearchChats
+      operationId: searchChats
+      responses:
+        "200":
+          description: OK
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /chats/{chatID}:
+    delete:
+      tags: [misc]
+      summary: DeleteSession
+      operationId: deleteSession
+      parameters:
+        - $ref: "#/components/parameters/chatID"
+      responses:
+        "200":
+          description: OK
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     get:
       tags: [chats]
       summary: Sohbet detayı
@@ -79,6 +100,17 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
   /chats/{chatID}/messages:
+    get:
+      tags: [misc]
+      summary: ListMessages
+      operationId: listMessages
+      parameters:
+        - $ref: "#/components/parameters/chatID"
+      responses:
+        "200":
+          description: OK
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     post:
       tags: [messages]
       summary: Mesaj gönder (non-stream)
@@ -110,6 +142,18 @@ paths:
           $ref: "#/components/responses/ProviderError"
         "504":
           $ref: "#/components/responses/ProviderTimeout"
+  /chats/{chatID}/messages/{messageID}:
+    delete:
+      tags: [misc]
+      summary: DeleteMessage
+      operationId: deleteMessage
+      parameters:
+        - $ref: "#/components/parameters/chatID"
+      responses:
+        "200":
+          description: OK
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /chats/{chatID}/stream:
     post:
       tags: [messages]
@@ -168,6 +212,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthenticatedUser"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /me/usage:
+    get:
+      tags: [misc]
+      summary: MeUsage
+      operationId: meUsage
+      responses:
+        "200":
+          description: OK
         "401":
           $ref: "#/components/responses/Unauthorized"
   /providers:

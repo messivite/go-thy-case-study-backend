@@ -340,12 +340,26 @@ Eğer `api.yaml` değişmiş ama üretilen dosyalar commit edilmemişse pipeline
 |---|---|---|---|
 | `GET` | `/health` veya `/api/health` | Hayır | Health check (`OK`) |
 | `GET` | `/api/me` | Evet | JWT'den user bilgisi |
+| `GET` | `/api/me/usage` | Evet | Günlük/haftalık token kullanım-kota özeti |
+| `GET` | `/api/chats/search?q=...&limit=...&cursor=...` | Evet | Kullanıcıya ait sohbetlerde title + user/assistant mesaj araması (cursor pagination) |
 | `GET` | `/api/providers` | Evet | Aktif provider listesi ve default bilgi |
 | `POST` | `/api/chats` | Evet | Yeni sohbet oluşturur |
-| `GET` | `/api/chats` | Evet | Sohbet listesini döner |
+| `GET` | `/api/chats` | Evet | Sohbet listesi (opsiyonel `limit` + `cursor` ile infinite-scroll pagination) |
 | `GET` | `/api/chats/{chatID}` | Evet | Sohbet ve mesaj detaylarını döner |
+| `DELETE` | `/api/chats/{chatID}` | Evet | Sohbeti soft-delete eder (`deleted_at` set edilir) |
+| `GET` | `/api/chats/{chatID}/messages` | Evet | Mesajları `direction=older|newer` + `cursor` ile iki yönlü sayfalar |
+| `DELETE` | `/api/chats/{chatID}/messages/{messageID}` | Evet | Kullanıcının kendi `user` mesajını soft-delete eder |
 | `POST` | `/api/chats/{chatID}/messages` | Evet | Non-stream mesaj gönderir |
 | `POST` | `/api/chats/{chatID}/stream` | Evet | SSE stream mesaj gönderir |
+
+### Soft Delete davranışı (`DELETE /api/chats/{chatID}`)
+
+- Fiziksel silme yapılmaz; `public.chat_sessions.deleted_at` alanı UTC timestamp ile işaretlenir.
+- Mesaj soft-delete için `public.chat_messages.deleted_at` kullanılır.
+- Soft-delete edilmiş oturumlar listeleme, arama ve mesaj sayfalama sonuçlarına dahil edilmez.
+- Soft-delete edilmiş mesajlar da chat detay ve mesaj listesi sonuçlarında görünmez.
+- Yetki kontrolü zorunludur: sadece JWT'deki kullanıcıya ait `chatID` için işlem yapılır.
+- Aynı oturuma tekrar delete çağrısı idempotent olarak `404` dönebilir (aktif kayıt bulunamaz).
 
 ## Auth ve Rol Akışı
 

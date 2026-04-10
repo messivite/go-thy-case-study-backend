@@ -400,7 +400,44 @@
         ]
       }
     },
+    "/chats/search": {
+      "get": {
+        "operationId": "searchChats",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "SearchChats",
+        "tags": [
+          "misc"
+        ]
+      }
+    },
     "/chats/{chatID}": {
+      "delete": {
+        "operationId": "deleteSession",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/chatID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "DeleteSession",
+        "tags": [
+          "misc"
+        ]
+      },
       "get": {
         "operationId": "getChat",
         "parameters": [
@@ -433,6 +470,26 @@
       }
     },
     "/chats/{chatID}/messages": {
+      "get": {
+        "operationId": "listMessages",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/chatID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "ListMessages",
+        "tags": [
+          "misc"
+        ]
+      },
       "post": {
         "operationId": "postMessage",
         "parameters": [
@@ -483,6 +540,28 @@
         "summary": "Mesaj gönder (non-stream)",
         "tags": [
           "messages"
+        ]
+      }
+    },
+    "/chats/{chatID}/messages/{messageID}": {
+      "delete": {
+        "operationId": "deleteMessage",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/chatID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "DeleteMessage",
+        "tags": [
+          "misc"
         ]
       }
     },
@@ -584,6 +663,23 @@
         "summary": "Mevcut kullanıcı bilgisi",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/me/usage": {
+      "get": {
+        "operationId": "meUsage",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "MeUsage",
+        "tags": [
+          "misc"
         ]
       }
     },

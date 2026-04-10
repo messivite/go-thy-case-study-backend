@@ -16,6 +16,20 @@ type UserTokenUsage struct {
 	WeeklyTotal int
 }
 
+// MeUsage aggregates LLM token quota and consumption for the authenticated user.
+// Used totals match checkQuota: successful completions only (outcome ok), UTC windows.
+type MeUsage struct {
+	QuotaBypass bool
+	Daily       MeUsageWindow
+	Weekly      MeUsageWindow
+}
+
+// MeUsageWindow pairs a limit (0 = unlimited) with consumed tokens in that window.
+type MeUsageWindow struct {
+	LimitTokens int
+	UsedTokens  int
+}
+
 // QuotaRepository abstracts quota + audit operations that the use case needs.
 type QuotaRepository interface {
 	GetUserQuota(ctx context.Context, userID string) (UserQuota, error)

@@ -1,8 +1,12 @@
 package chat
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"context"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
@@ -17,6 +21,21 @@ type SyncResult struct {
 	SyncedMessages   []domain.ChatMessage
 	AssistantMessage domain.ChatMessage
 	Usage            map[string]any
+}
+
+type SearchResult struct {
+	TotalCount int
+	Items      []domain.SearchChatHit
+	NextCursor string
+	HasNext    bool
+}
+
+type ChatMessagesPage struct {
+	TotalCount int
+	Messages   []domain.ChatMessage
+	NextCursor string
+	HasNext    bool
+	Direction  string
 }
 
 type UseCase struct {
@@ -73,6 +92,28 @@ func (uc *UseCase) GetSessionMessages(ctx context.Context, userID, sessionID str
 	return uc.repo.GetMessagesBySession(ctx, sessionID)
 }
 
+func (uc *UseCase) DeleteSession(ctx context.Context, userID, chatID string) error {
+	session, err := uc.repo.GetChatSessionByID(ctx, chatID)
+	if err != nil {
+		return err
+	}
+	if session.UserID != userID {
+		return domain.ErrUnauthorized
+	}
+	return uc.repo.SoftDeleteChatSession(ctx, chatID)
+}
+
+func (uc *UseCase) DeleteOwnMessage(ctx context.Context, userID, chatID, messageID string) error {
+	session, err := uc.repo.GetChatSessionByID(ctx, chatID)
+	if err != nil {
+		return err
+	}
+	if session.UserID != userID {
+		return domain.ErrUnauthorized
+	}
+	return uc.repo.SoftDeleteUserMessage(ctx, chatID, messageID, userID)
+}
+
 func (uc *UseCase) GetSessionSummary(ctx context.Context, chatID string) (lastMessagePreview string, updatedAt time.Time) {
 	msgs, err := uc.repo.GetMessagesBySession(ctx, chatID)
 	if err != nil || len(msgs) == 0 {
@@ -108,6 +149,316 @@ func (uc *UseCase) checkQuota(ctx context.Context, userID string) error {
 		return domain.ErrQuotaWeeklyExceeded
 	}
 	return nil
+}
+
+// MeUsage loads quota limits and token usage in parallel (two independent store calls).
+func (uc *UseCase) MeUsage(ctx context.Context, userID string) (domain.MeUsage, error) {
+	var (
+		q      domain.UserQuota
+		u      domain.UserTokenUsage
+		errQ   error
+		errU   error
+		wg     sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		q, errQ = uc.quotaRepo.GetUserQuota(ctx, userID)
+	}()
+	go func() {
+		defer wg.Done()
+		u, errU = uc.quotaRepo.GetUserTokenUsage(ctx, userID)
+	}()
+	wg.Wait()
+	if errQ != nil {
+		return domain.MeUsage{}, errQ
+	}
+	if errU != nil {
+		return domain.MeUsage{}, errU
+	}
+	return domain.MeUsage{
+		QuotaBypass: q.QuotaBypass,
+		Daily: domain.MeUsageWindow{
+			LimitTokens: q.DailyTokenLimit,
+			UsedTokens:  u.DailyTotal,
+		},
+		Weekly: domain.MeUsageWindow{
+			LimitTokens: q.WeeklyTokenLimit,
+			UsedTokens:  u.WeeklyTotal,
+		},
+	}, nil
+}
+
+func (uc *UseCase) SearchChats(
+	ctx context.Context,
+	userID, query string,
+	limit int,
+	cursorToken string,
+) (SearchResult, error) {
+	q := strings.TrimSpace(query)
+	if len(q) < 2 {
+		return SearchResult{}, domain.ErrSearchQueryTooShort
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	cursor, err := decodeSearchCursor(cursorToken)
+	if err != nil {
+		return SearchResult{}, err
+	}
+
+	raw, err := uc.repo.SearchChats(ctx, domain.SearchChatParams{
+		UserID: userID,
+		Query:  q,
+		Limit:  limit + 1, // one extra row for hasNext
+		Cursor: cursor,
+	})
+	if err != nil {
+		return SearchResult{}, err
+	}
+
+	hasNext := len(raw.Items) > limit
+	items := raw.Items
+	if hasNext {
+		items = items[:limit]
+	}
+
+	next := ""
+	if hasNext && len(items) > 0 {
+		last := items[len(items)-1]
+		next = encodeSearchCursor(domain.SearchCursor{
+			SortAt:    last.SortAt,
+			SessionID: last.SessionID,
+		})
+	}
+
+	return SearchResult{
+		TotalCount: raw.TotalCount,
+		Items:      items,
+		HasNext:    hasNext,
+		NextCursor: next,
+	}, nil
+}
+
+type searchCursorWire struct {
+	SortAt    string `json:"sortAt"`
+	SessionID string `json:"sessionId"`
+}
+
+func encodeSearchCursor(c domain.SearchCursor) string {
+	wire := searchCursorWire{
+		SortAt:    c.SortAt.UTC().Format(time.RFC3339Nano),
+		SessionID: c.SessionID,
+	}
+	b, _ := json.Marshal(wire)
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func decodeSearchCursor(token string) (*domain.SearchCursor, error) {
+	t := strings.TrimSpace(token)
+	if t == "" {
+		return nil, nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(t)
+	if err != nil {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	var wire searchCursorWire
+	if err := json.Unmarshal(b, &wire); err != nil {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	if strings.TrimSpace(wire.SessionID) == "" {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	sortAt, err := time.Parse(time.RFC3339Nano, wire.SortAt)
+	if err != nil {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	return &domain.SearchCursor{
+		SortAt:    sortAt.UTC(),
+		SessionID: wire.SessionID,
+	}, nil
+}
+
+func (uc *UseCase) GetChatMessagesPage(
+	ctx context.Context,
+	userID, chatID string,
+	limit int,
+	direction string,
+	cursorToken string,
+) (ChatMessagesPage, error) {
+	session, err := uc.repo.GetChatSessionByID(ctx, chatID)
+	if err != nil {
+		return ChatMessagesPage{}, err
+	}
+	if session.UserID != userID {
+		return ChatMessagesPage{}, domain.ErrUnauthorized
+	}
+	if limit <= 0 {
+		limit = 30
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if direction == "" {
+		direction = "older"
+	}
+	if direction != "older" && direction != "newer" {
+		return ChatMessagesPage{}, domain.ErrInvalidDirection
+	}
+	cursor, err := decodeMessageCursor(cursorToken)
+	if err != nil {
+		return ChatMessagesPage{}, err
+	}
+	rows, total, err := uc.repo.GetMessagesBySessionPage(ctx, chatID, limit+1, direction, cursor)
+	if err != nil {
+		return ChatMessagesPage{}, err
+	}
+	hasNext := len(rows) > limit
+	if hasNext {
+		rows = rows[:limit]
+	}
+	// Keep UI order stable (oldest -> newest) for both directions.
+	if direction == "older" {
+		slices.Reverse(rows)
+	}
+
+	next := ""
+	if hasNext && len(rows) > 0 {
+		oldest := rows[0]
+		next = encodeMessageCursor(domain.MessageCursor{
+			CreatedAt: oldest.CreatedAt,
+			MessageID: oldest.ID.String(),
+		})
+	}
+	return ChatMessagesPage{
+		TotalCount: total,
+		Messages:   rows,
+		HasNext:    hasNext,
+		NextCursor: next,
+		Direction:  direction,
+	}, nil
+}
+
+type messageCursorWire struct {
+	CreatedAt string `json:"createdAt"`
+	MessageID string `json:"messageId"`
+}
+
+func encodeMessageCursor(c domain.MessageCursor) string {
+	wire := messageCursorWire{
+		CreatedAt: c.CreatedAt.UTC().Format(time.RFC3339Nano),
+		MessageID: c.MessageID,
+	}
+	b, _ := json.Marshal(wire)
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func decodeMessageCursor(token string) (*domain.MessageCursor, error) {
+	t := strings.TrimSpace(token)
+	if t == "" {
+		return nil, nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(t)
+	if err != nil {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	var wire messageCursorWire
+	if err := json.Unmarshal(b, &wire); err != nil {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, wire.CreatedAt)
+	if err != nil || strings.TrimSpace(wire.MessageID) == "" {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	return &domain.MessageCursor{
+		CreatedAt: createdAt.UTC(),
+		MessageID: wire.MessageID,
+	}, nil
+}
+
+type sessionCursorWire struct {
+	SortAt    string `json:"sortAt"`
+	SessionID string `json:"sessionId"`
+}
+
+type SessionListResult struct {
+	TotalCount int
+	Items      []domain.SessionListItem
+	HasNext    bool
+	NextCursor string
+}
+
+func (uc *UseCase) ListSessionsPage(ctx context.Context, userID string, limit int, cursorToken string) (SessionListResult, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	cursor, err := decodeSessionCursor(cursorToken)
+	if err != nil {
+		return SessionListResult{}, err
+	}
+	page, err := uc.repo.GetChatSessionsByUserPage(ctx, userID, limit+1, cursor)
+	if err != nil {
+		return SessionListResult{}, err
+	}
+	hasNext := len(page.Items) > limit
+	items := page.Items
+	if hasNext {
+		items = items[:limit]
+	}
+	next := ""
+	if hasNext && len(items) > 0 {
+		last := items[len(items)-1]
+		next = encodeSessionCursor(domain.SessionCursor{
+			SortAt:    last.SortAt,
+			SessionID: last.Session.ID.String(),
+		})
+	}
+	return SessionListResult{
+		TotalCount: page.TotalCount,
+		Items:      items,
+		HasNext:    hasNext,
+		NextCursor: next,
+	}, nil
+}
+
+func encodeSessionCursor(c domain.SessionCursor) string {
+	wire := sessionCursorWire{
+		SortAt:    c.SortAt.UTC().Format(time.RFC3339Nano),
+		SessionID: c.SessionID,
+	}
+	b, _ := json.Marshal(wire)
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func decodeSessionCursor(token string) (*domain.SessionCursor, error) {
+	t := strings.TrimSpace(token)
+	if t == "" {
+		return nil, nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(t)
+	if err != nil {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	var wire sessionCursorWire
+	if err := json.Unmarshal(b, &wire); err != nil {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	sortAt, err := time.Parse(time.RFC3339Nano, wire.SortAt)
+	if err != nil || strings.TrimSpace(wire.SessionID) == "" {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	return &domain.SessionCursor{
+		SortAt:    sortAt.UTC(),
+		SessionID: wire.SessionID,
+	}, nil
 }
 
 func (uc *UseCase) SendMessage(

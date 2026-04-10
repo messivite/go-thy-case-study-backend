@@ -57,7 +57,7 @@ func (r *SupabaseRepository) CreateChatSession(ctx context.Context, userID, titl
 }
 
 func (r *SupabaseRepository) GetChatSessionsByUser(ctx context.Context, userID string) ([]domain.ChatSession, error) {
-	path := fmt.Sprintf("/chat_sessions?user_id=eq.%s&order=created_at.desc", userID)
+	path := fmt.Sprintf("/chat_sessions?user_id=eq.%s&deleted_at=is.null&order=created_at.desc", userID)
 
 	var rows []chatSessionRow
 	if err := r.doRequest(ctx, http.MethodGet, path, nil, &rows); err != nil {
@@ -71,12 +71,38 @@ func (r *SupabaseRepository) GetChatSessionsByUser(ctx context.Context, userID s
 	return sessions, nil
 }
 
+func (r *SupabaseRepository) GetChatSessionsByUserPage(ctx context.Context, userID string, limit int, cursor *domain.SessionCursor) (domain.SessionListPage, error) {
+	body := map[string]any{
+		"p_user_id": userID,
+		"p_limit":   limit,
+	}
+	if cursor != nil {
+		body["p_cursor_sort_at"] = cursor.SortAt.UTC().Format(time.RFC3339Nano)
+		body["p_cursor_session_id"] = cursor.SessionID
+	}
+	var rows []sessionPageRow
+	if err := r.doRequest(ctx, http.MethodPost, "/rpc/llm_get_user_chat_sessions_page", body, &rows); err != nil {
+		return domain.SessionListPage{}, fmt.Errorf("list session page: %w", err)
+	}
+	if len(rows) == 0 {
+		return domain.SessionListPage{}, nil
+	}
+	items := make([]domain.SessionListItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.toDomain())
+	}
+	return domain.SessionListPage{
+		TotalCount: rows[0].TotalCount,
+		Items:      items,
+	}, nil
+}
+
 func (r *SupabaseRepository) GetChatSessionByID(ctx context.Context, sessionID string) (domain.ChatSession, error) {
 	if _, err := uuid.Parse(sessionID); err != nil {
 		return domain.ChatSession{}, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
 	}
 
-	path := fmt.Sprintf("/chat_sessions?id=eq.%s", sessionID)
+	path := fmt.Sprintf("/chat_sessions?id=eq.%s&deleted_at=is.null", sessionID)
 
 	var rows []chatSessionRow
 	if err := r.doRequest(ctx, http.MethodGet, path, nil, &rows); err != nil {
@@ -90,6 +116,23 @@ func (r *SupabaseRepository) GetChatSessionByID(ctx context.Context, sessionID s
 	return rows[0].toDomain(), nil
 }
 
+func (r *SupabaseRepository) SoftDeleteChatSession(ctx context.Context, sessionID string) error {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	body := map[string]any{"deleted_at": now}
+	path := fmt.Sprintf("/chat_sessions?id=eq.%s&deleted_at=is.null", sessionID)
+	var rows []chatSessionRow
+	if err := r.doRequest(ctx, http.MethodPatch, path, body, &rows); err != nil {
+		return fmt.Errorf("soft delete session: %w", err)
+	}
+	if len(rows) == 0 {
+		return domain.ErrSessionNotFound
+	}
+	return nil
+}
+
 func (r *SupabaseRepository) UpdateSessionLastLLM(ctx context.Context, sessionID, provider, model string) error {
 	if _, err := uuid.Parse(sessionID); err != nil {
 		return fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
@@ -99,7 +142,7 @@ func (r *SupabaseRepository) UpdateSessionLastLLM(ctx context.Context, sessionID
 		"last_provider": provider,
 		"last_model":    model,
 	}
-	path := fmt.Sprintf("/chat_sessions?id=eq.%s", sessionID)
+	path := fmt.Sprintf("/chat_sessions?id=eq.%s&deleted_at=is.null", sessionID)
 	return r.doRequest(ctx, http.MethodPatch, path, body, nil)
 }
 
@@ -172,12 +215,32 @@ func (r *SupabaseRepository) SaveMessages(ctx context.Context, sessionID, userID
 	return saved, nil
 }
 
+func (r *SupabaseRepository) SoftDeleteUserMessage(ctx context.Context, sessionID, messageID, userID string) error {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	if _, err := uuid.Parse(messageID); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidMessageID, err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	body := map[string]any{"deleted_at": now}
+	path := fmt.Sprintf("/chat_messages?id=eq.%s&session_id=eq.%s&user_id=eq.%s&role=eq.user&deleted_at=is.null", messageID, sessionID, userID)
+	var rows []chatMessageRow
+	if err := r.doRequest(ctx, http.MethodPatch, path, body, &rows); err != nil {
+		return fmt.Errorf("soft delete message: %w", err)
+	}
+	if len(rows) == 0 {
+		return domain.ErrMessageNotFound
+	}
+	return nil
+}
+
 func (r *SupabaseRepository) GetMessagesBySession(ctx context.Context, sessionID string) ([]domain.ChatMessage, error) {
 	if _, err := uuid.Parse(sessionID); err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
 	}
 
-	path := fmt.Sprintf("/chat_messages?session_id=eq.%s&order=created_at.asc", sessionID)
+	path := fmt.Sprintf("/chat_messages?session_id=eq.%s&deleted_at=is.null&order=created_at.asc", sessionID)
 
 	var rows []chatMessageRow
 	if err := r.doRequest(ctx, http.MethodGet, path, nil, &rows); err != nil {
@@ -189,6 +252,67 @@ func (r *SupabaseRepository) GetMessagesBySession(ctx context.Context, sessionID
 		messages = append(messages, row.toDomain())
 	}
 	return messages, nil
+}
+
+func (r *SupabaseRepository) GetMessagesBySessionPage(ctx context.Context, sessionID string, limit int, direction string, cursor *domain.MessageCursor) ([]domain.ChatMessage, int, error) {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return nil, 0, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	if direction == "" {
+		direction = "older"
+	}
+	if direction != "older" && direction != "newer" {
+		return nil, 0, domain.ErrInvalidDirection
+	}
+	body := map[string]any{
+		"p_session_id": sessionID,
+		"p_limit":      limit,
+		"p_direction":  direction,
+	}
+	if cursor != nil {
+		body["p_cursor_created_at"] = cursor.CreatedAt.UTC().Format(time.RFC3339Nano)
+		body["p_cursor_message_id"] = cursor.MessageID
+	}
+	var rows []messagePageRow
+	if err := r.doRequest(ctx, http.MethodPost, "/rpc/llm_get_session_messages_page", body, &rows); err != nil {
+		return nil, 0, fmt.Errorf("messages page: %w", err)
+	}
+	if len(rows) == 0 {
+		return []domain.ChatMessage{}, 0, nil
+	}
+	out := make([]domain.ChatMessage, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.toDomainMessage())
+	}
+	return out, rows[0].TotalCount, nil
+}
+
+func (r *SupabaseRepository) SearchChats(ctx context.Context, params domain.SearchChatParams) (domain.SearchChatsResult, error) {
+	body := map[string]any{
+		"p_user_id": params.UserID,
+		"p_query":   params.Query,
+		"p_limit":   params.Limit,
+	}
+	if params.Cursor != nil {
+		body["p_cursor_sort_at"] = params.Cursor.SortAt.UTC().Format(time.RFC3339Nano)
+		body["p_cursor_session_id"] = params.Cursor.SessionID
+	}
+
+	var rows []searchChatRow
+	if err := r.doRequest(ctx, http.MethodPost, "/rpc/llm_search_user_chats", body, &rows); err != nil {
+		return domain.SearchChatsResult{}, fmt.Errorf("search chats: %w", err)
+	}
+	if len(rows) == 0 {
+		return domain.SearchChatsResult{}, nil
+	}
+	items := make([]domain.SearchChatHit, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.toDomain())
+	}
+	return domain.SearchChatsResult{
+		TotalCount: rows[0].TotalCount,
+		Items:      items,
+	}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +370,7 @@ type chatSessionRow struct {
 	Title            string  `json:"title"`
 	CreatedAt        string  `json:"created_at"`
 	UpdatedAt        string  `json:"updated_at"`
+	DeletedAt        *string `json:"deleted_at"`
 	LastProvider     *string `json:"last_provider"`
 	LastModel        *string `json:"last_model"`
 	DefaultProvider  *string `json:"default_provider"`
@@ -260,6 +385,12 @@ func (r chatSessionRow) toDomain() domain.ChatSession {
 		UserID:    r.UserID,
 		Title:     r.Title,
 		CreatedAt: createdAt,
+	}
+	if r.DeletedAt != nil {
+		t, err := time.Parse(time.RFC3339Nano, *r.DeletedAt)
+		if err == nil {
+			s.DeletedAt = &t
+		}
 	}
 	if r.LastProvider != nil {
 		s.LastProvider = *r.LastProvider
@@ -283,8 +414,128 @@ type chatMessageRow struct {
 	Role      string  `json:"role"`
 	Content   string  `json:"content"`
 	CreatedAt string  `json:"created_at"`
+	DeletedAt *string `json:"deleted_at"`
 	Provider  *string `json:"provider"`
 	Model     *string `json:"model"`
+}
+
+type searchChatRow struct {
+	TotalCount       int     `json:"total_count"`
+	SessionID        string  `json:"session_id"`
+	Title            string  `json:"title"`
+	SessionCreatedAt string  `json:"session_created_at"`
+	SessionUpdatedAt string  `json:"session_updated_at"`
+	LastMessageAt    *string `json:"last_message_at"`
+	TitleMatched     bool    `json:"title_matched"`
+	MatchedMessageID *string `json:"matched_message_id"`
+	MatchedRole      *string `json:"matched_role"`
+	MatchedContent   *string `json:"matched_content"`
+	MatchedAt        *string `json:"matched_at"`
+	SortAt           string  `json:"sort_at"`
+}
+
+type sessionPageRow struct {
+	TotalCount        int     `json:"total_count"`
+	SessionID         string  `json:"session_id"`
+	Title             string  `json:"title"`
+	CreatedAt         string  `json:"created_at"`
+	UpdatedAt         string  `json:"updated_at"`
+	DefaultProvider   *string `json:"default_provider"`
+	DefaultModel      *string `json:"default_model"`
+	LastProvider      *string `json:"last_provider"`
+	LastModel         *string `json:"last_model"`
+	LastMessagePreview *string `json:"last_message_preview"`
+	SortAt            string  `json:"sort_at"`
+}
+
+func (r sessionPageRow) toDomain() domain.SessionListItem {
+	createdAt, _ := time.Parse(time.RFC3339Nano, r.CreatedAt)
+	updatedAt, _ := time.Parse(time.RFC3339Nano, r.UpdatedAt)
+	sortAt, _ := time.Parse(time.RFC3339Nano, r.SortAt)
+	sid, _ := uuid.Parse(r.SessionID)
+	s := domain.ChatSession{
+		ID:        sid,
+		Title:     r.Title,
+		CreatedAt: createdAt,
+	}
+	if r.DefaultProvider != nil {
+		s.DefaultProvider = *r.DefaultProvider
+	}
+	if r.DefaultModel != nil {
+		s.DefaultModel = *r.DefaultModel
+	}
+	if r.LastProvider != nil {
+		s.LastProvider = *r.LastProvider
+	}
+	if r.LastModel != nil {
+		s.LastModel = *r.LastModel
+	}
+	preview := ""
+	if r.LastMessagePreview != nil {
+		preview = *r.LastMessagePreview
+	}
+	return domain.SessionListItem{
+		Session:            s,
+		LastMessagePreview: preview,
+		UpdatedAt:          updatedAt,
+		SortAt:             sortAt,
+	}
+}
+
+type messagePageRow struct {
+	TotalCount int     `json:"total_count"`
+	ID         string  `json:"id"`
+	SessionID  string  `json:"session_id"`
+	UserID     *string `json:"user_id"`
+	Role       string  `json:"role"`
+	Content    string  `json:"content"`
+	CreatedAt  string  `json:"created_at"`
+	Provider   *string `json:"provider"`
+	Model      *string `json:"model"`
+}
+
+func (r messagePageRow) toDomainMessage() domain.ChatMessage {
+	row := chatMessageRow{
+		ID:        r.ID,
+		SessionID: r.SessionID,
+		UserID:    r.UserID,
+		Role:      r.Role,
+		Content:   r.Content,
+		CreatedAt: r.CreatedAt,
+		Provider:  r.Provider,
+		Model:     r.Model,
+	}
+	return row.toDomain()
+}
+
+func (r searchChatRow) toDomain() domain.SearchChatHit {
+	sessionCreatedAt, _ := time.Parse(time.RFC3339Nano, r.SessionCreatedAt)
+	sessionUpdatedAt, _ := time.Parse(time.RFC3339Nano, r.SessionUpdatedAt)
+	sortAt, _ := time.Parse(time.RFC3339Nano, r.SortAt)
+	out := domain.SearchChatHit{
+		SessionID:        r.SessionID,
+		Title:            r.Title,
+		SessionCreatedAt: sessionCreatedAt,
+		SessionUpdatedAt: sessionUpdatedAt,
+		TitleMatched:     r.TitleMatched,
+		SortAt:           sortAt,
+	}
+	if r.LastMessageAt != nil {
+		out.LastMessageAt, _ = time.Parse(time.RFC3339Nano, *r.LastMessageAt)
+	}
+	if r.MatchedMessageID != nil {
+		out.MatchedMessageID = *r.MatchedMessageID
+	}
+	if r.MatchedRole != nil {
+		out.MatchedRole = domain.Role(*r.MatchedRole)
+	}
+	if r.MatchedContent != nil {
+		out.MatchedContent = *r.MatchedContent
+	}
+	if r.MatchedAt != nil {
+		out.MatchedAt, _ = time.Parse(time.RFC3339Nano, *r.MatchedAt)
+	}
+	return out
 }
 
 func (r chatMessageRow) toDomain() domain.ChatMessage {
@@ -304,6 +555,12 @@ func (r chatMessageRow) toDomain() domain.ChatMessage {
 		Role:      domain.Role(r.Role),
 		Content:   r.Content,
 		CreatedAt: createdAt,
+	}
+	if r.DeletedAt != nil {
+		t, err := time.Parse(time.RFC3339Nano, *r.DeletedAt)
+		if err == nil {
+			m.DeletedAt = &t
+		}
 	}
 	if r.Provider != nil {
 		m.Provider = *r.Provider

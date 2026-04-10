@@ -46,11 +46,16 @@ func NewServer(authService auth.AuthService, chatHandler *chat.Handler, cfg Serv
 		r.Group(func(r chi.Router) {
 			r.Use(auth.AuthMiddleware(authService))
 			r.Get("/me", chatHandler.Me)
+			r.Get("/me/usage", chatHandler.MeUsage)
+			r.Get("/chats/search", chatHandler.SearchChats)
 			r.Get("/providers", chatHandler.ListProviders)
 
 			r.Post("/chats", chatHandler.CreateSession)
 			r.Get("/chats", chatHandler.ListSessions)
 			r.Get("/chats/{chatID}", chatHandler.GetChat)
+			r.Delete("/chats/{chatID}", chatHandler.DeleteSession)
+			r.Get("/chats/{chatID}/messages", chatHandler.ListMessages)
+			r.Delete("/chats/{chatID}/messages/{messageID}", chatHandler.DeleteMessage)
 			r.Post("/chats/{chatID}/messages", chatHandler.PostMessage)
 			r.Post("/chats/{chatID}/sync", chatHandler.SyncMessages)
 			r.Post("/chats/{chatID}/stream", chatHandler.StreamMessage)

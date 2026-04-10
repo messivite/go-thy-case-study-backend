@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,7 +52,7 @@ func (r *MemoryRepository) GetChatSessionsByUser(ctx context.Context, userID str
 
 	sessions := make([]domain.ChatSession, 0)
 	for _, session := range r.sessions {
-		if session.UserID == userID {
+		if session.UserID == userID && session.DeletedAt == nil {
 			sessions = append(sessions, session)
 		}
 	}
@@ -69,6 +70,70 @@ func (r *MemoryRepository) GetChatSessionsByUser(ctx context.Context, userID str
 	return sessions, nil
 }
 
+func (r *MemoryRepository) GetChatSessionsByUserPage(ctx context.Context, userID string, limit int, cursor *domain.SessionCursor) (domain.SessionListPage, error) {
+	sessions, err := r.GetChatSessionsByUser(ctx, userID)
+	if err != nil {
+		return domain.SessionListPage{}, err
+	}
+	items := make([]domain.SessionListItem, 0, len(sessions))
+	for _, s := range sessions {
+		msgs := r.messages[s.ID]
+		lastPreview := ""
+		updatedAt := s.CreatedAt
+		for i := len(msgs) - 1; i >= 0; i-- {
+			if msgs[i].DeletedAt == nil {
+				last := msgs[i]
+				updatedAt = last.CreatedAt
+				lastPreview = last.Content
+				if len(lastPreview) > 80 {
+					lastPreview = lastPreview[:80]
+				}
+				break
+			}
+		}
+		sortAt := updatedAt
+		items = append(items, domain.SessionListItem{
+			Session:            s,
+			LastMessagePreview: lastPreview,
+			UpdatedAt:          updatedAt,
+			SortAt:             sortAt,
+		})
+	}
+	slices.SortFunc(items, func(a, b domain.SessionListItem) int {
+		if a.SortAt.After(b.SortAt) {
+			return -1
+		}
+		if a.SortAt.Before(b.SortAt) {
+			return 1
+		}
+		if a.Session.ID.String() > b.Session.ID.String() {
+			return -1
+		}
+		if a.Session.ID.String() < b.Session.ID.String() {
+			return 1
+		}
+		return 0
+	})
+	total := len(items)
+	filtered := items
+	if cursor != nil {
+		filtered = make([]domain.SessionListItem, 0, len(items))
+		for _, it := range items {
+			id := it.Session.ID.String()
+			if it.SortAt.Before(cursor.SortAt) || (it.SortAt.Equal(cursor.SortAt) && id < cursor.SessionID) {
+				filtered = append(filtered, it)
+			}
+		}
+	}
+	if limit <= 0 || limit > len(filtered) {
+		limit = len(filtered)
+	}
+	return domain.SessionListPage{
+		TotalCount: total,
+		Items:      filtered[:limit],
+	}, nil
+}
+
 func (r *MemoryRepository) GetChatSessionByID(ctx context.Context, sessionID string) (domain.ChatSession, error) {
 	id, err := uuid.Parse(sessionID)
 	if err != nil {
@@ -79,10 +144,29 @@ func (r *MemoryRepository) GetChatSessionByID(ctx context.Context, sessionID str
 	defer r.mu.RUnlock()
 
 	session, ok := r.sessions[id]
-	if !ok {
+	if !ok || session.DeletedAt != nil {
 		return domain.ChatSession{}, domain.ErrSessionNotFound
 	}
 	return session, nil
+}
+
+func (r *MemoryRepository) SoftDeleteChatSession(ctx context.Context, sessionID string) error {
+	id, err := uuid.Parse(sessionID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	s, ok := r.sessions[id]
+	if !ok || s.DeletedAt != nil {
+		return domain.ErrSessionNotFound
+	}
+	now := time.Now().UTC()
+	s.DeletedAt = &now
+	r.sessions[id] = s
+	return nil
 }
 
 func (r *MemoryRepository) UpdateSessionLastLLM(ctx context.Context, sessionID, provider, model string) error {
@@ -127,6 +211,9 @@ func (r *MemoryRepository) SaveMessage(ctx context.Context, sessionID, userID st
 	if _, ok := r.sessions[sessionUUID]; !ok {
 		return domain.ChatMessage{}, domain.ErrSessionNotFound
 	}
+	if r.sessions[sessionUUID].DeletedAt != nil {
+		return domain.ChatMessage{}, domain.ErrSessionNotFound
+	}
 
 	r.messages[sessionUUID] = append(r.messages[sessionUUID], message)
 	return message, nil
@@ -142,6 +229,9 @@ func (r *MemoryRepository) SaveMessages(ctx context.Context, sessionID, userID s
 	defer r.mu.Unlock()
 
 	if _, ok := r.sessions[sessionUUID]; !ok {
+		return nil, domain.ErrSessionNotFound
+	}
+	if r.sessions[sessionUUID].DeletedAt != nil {
 		return nil, domain.ErrSessionNotFound
 	}
 
@@ -166,6 +256,36 @@ func (r *MemoryRepository) SaveMessages(ctx context.Context, sessionID, userID s
 	return saved, nil
 }
 
+func (r *MemoryRepository) SoftDeleteUserMessage(ctx context.Context, sessionID, messageID, userID string) error {
+	sessionUUID, err := uuid.Parse(sessionID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	messageUUID, err := uuid.Parse(messageID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidMessageID, err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.sessions[sessionUUID]; !ok || r.sessions[sessionUUID].DeletedAt != nil {
+		return domain.ErrSessionNotFound
+	}
+	msgs := r.messages[sessionUUID]
+	for i := range msgs {
+		if msgs[i].ID == messageUUID &&
+			msgs[i].Role == domain.RoleUser &&
+			msgs[i].UserID == userID &&
+			msgs[i].DeletedAt == nil {
+			now := time.Now().UTC()
+			msgs[i].DeletedAt = &now
+			r.messages[sessionUUID] = msgs
+			return nil
+		}
+	}
+	return domain.ErrMessageNotFound
+}
+
 func (r *MemoryRepository) GetMessagesBySession(ctx context.Context, sessionID string) ([]domain.ChatMessage, error) {
 	sessionUUID, err := uuid.Parse(sessionID)
 	if err != nil {
@@ -178,9 +298,162 @@ func (r *MemoryRepository) GetMessagesBySession(ctx context.Context, sessionID s
 	if _, ok := r.sessions[sessionUUID]; !ok {
 		return nil, domain.ErrSessionNotFound
 	}
+	if r.sessions[sessionUUID].DeletedAt != nil {
+		return nil, domain.ErrSessionNotFound
+	}
 
 	msgs := r.messages[sessionUUID]
-	out := make([]domain.ChatMessage, len(msgs))
-	copy(out, msgs)
+	out := make([]domain.ChatMessage, 0, len(msgs))
+	for _, m := range msgs {
+		if m.DeletedAt == nil {
+			out = append(out, m)
+		}
+	}
 	return out, nil
+}
+
+func (r *MemoryRepository) GetMessagesBySessionPage(ctx context.Context, sessionID string, limit int, direction string, cursor *domain.MessageCursor) ([]domain.ChatMessage, int, error) {
+	msgs, err := r.GetMessagesBySession(ctx, sessionID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if direction == "" {
+		direction = "older"
+	}
+	if direction != "older" && direction != "newer" {
+		return nil, 0, domain.ErrInvalidDirection
+	}
+	total := len(msgs)
+	if limit <= 0 || limit > total {
+		limit = total
+	}
+
+	ordered := make([]domain.ChatMessage, 0, total)
+	if direction == "older" {
+		for i := len(msgs) - 1; i >= 0; i-- {
+			ordered = append(ordered, msgs[i]) // desc
+		}
+	} else {
+		ordered = append(ordered, msgs...) // asc
+	}
+	filtered := ordered
+	if cursor != nil {
+		filtered = make([]domain.ChatMessage, 0, len(ordered))
+		for _, m := range ordered {
+			id := m.ID.String()
+			if direction == "older" && (m.CreatedAt.Before(cursor.CreatedAt) || (m.CreatedAt.Equal(cursor.CreatedAt) && id < cursor.MessageID)) {
+				filtered = append(filtered, m)
+			}
+			if direction == "newer" && (m.CreatedAt.After(cursor.CreatedAt) || (m.CreatedAt.Equal(cursor.CreatedAt) && id > cursor.MessageID)) {
+				filtered = append(filtered, m)
+			}
+		}
+	}
+	if limit > len(filtered) {
+		limit = len(filtered)
+	}
+	return filtered[:limit], total, nil
+}
+
+func (r *MemoryRepository) SearchChats(ctx context.Context, params domain.SearchChatParams) (domain.SearchChatsResult, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	q := strings.ToLower(strings.TrimSpace(params.Query))
+	if q == "" {
+		return domain.SearchChatsResult{}, nil
+	}
+
+	hits := make([]domain.SearchChatHit, 0)
+	for _, s := range r.sessions {
+		if s.UserID != params.UserID || s.DeletedAt != nil {
+			continue
+		}
+		titleMatched := strings.Contains(strings.ToLower(s.Title), q)
+
+		var (
+			matched      *domain.ChatMessage
+			lastMessage  time.Time
+		)
+		for i := range r.messages[s.ID] {
+			m := r.messages[s.ID][i]
+			if m.DeletedAt != nil {
+				continue
+			}
+			if m.CreatedAt.After(lastMessage) {
+				lastMessage = m.CreatedAt
+			}
+			if m.Role != domain.RoleUser && m.Role != domain.RoleAssistant {
+				continue
+			}
+			if strings.Contains(strings.ToLower(m.Content), q) {
+				if matched == nil || m.CreatedAt.After(matched.CreatedAt) {
+					cp := m
+					matched = &cp
+				}
+			}
+		}
+		if !titleMatched && matched == nil {
+			continue
+		}
+		updatedAt := lastMessage
+		if updatedAt.IsZero() {
+			updatedAt = s.CreatedAt
+		}
+		sortAt := updatedAt
+		hit := domain.SearchChatHit{
+			SessionID:        s.ID.String(),
+			Title:            s.Title,
+			SessionCreatedAt: s.CreatedAt,
+			SessionUpdatedAt: updatedAt,
+			LastMessageAt:    lastMessage,
+			TitleMatched:     titleMatched,
+			SortAt:           sortAt,
+		}
+		if matched != nil {
+			hit.MatchedMessageID = matched.ID.String()
+			hit.MatchedRole = matched.Role
+			hit.MatchedContent = matched.Content
+			hit.MatchedAt = matched.CreatedAt
+			hit.SortAt = matched.CreatedAt
+		}
+		hits = append(hits, hit)
+	}
+
+	slices.SortFunc(hits, func(a, b domain.SearchChatHit) int {
+		if a.SortAt.After(b.SortAt) {
+			return -1
+		}
+		if a.SortAt.Before(b.SortAt) {
+			return 1
+		}
+		if a.SessionID > b.SessionID {
+			return -1
+		}
+		if a.SessionID < b.SessionID {
+			return 1
+		}
+		return 0
+	})
+
+	total := len(hits)
+	filtered := hits
+	if params.Cursor != nil {
+		filtered = make([]domain.SearchChatHit, 0, len(hits))
+		for _, h := range hits {
+			if h.SortAt.Before(params.Cursor.SortAt) || (h.SortAt.Equal(params.Cursor.SortAt) && h.SessionID < params.Cursor.SessionID) {
+				filtered = append(filtered, h)
+			}
+		}
+	}
+
+	limit := params.Limit
+	if limit <= 0 || limit > len(filtered) {
+		limit = len(filtered)
+	}
+
+	return domain.SearchChatsResult{
+		TotalCount: total,
+		Items:      filtered[:limit],
+	}, nil
 }

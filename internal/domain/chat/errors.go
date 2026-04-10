@@ -9,6 +9,11 @@ var (
 	ErrUnauthorized        = errors.New("not authorized")
 	ErrSessionNotFound     = errors.New("session not found")
 	ErrInvalidSessionID    = errors.New("invalid session id")
+	ErrInvalidMessageID    = errors.New("invalid message id")
+	ErrMessageNotFound     = errors.New("message not found")
+	ErrInvalidSearchCursor = errors.New("invalid search cursor")
+	ErrSearchQueryTooShort = errors.New("search query must be at least 2 characters")
+	ErrInvalidDirection    = errors.New("invalid direction")
 
 	ErrProviderAuthFailed  = errors.New("provider authentication failed")
 	ErrProviderTimeout     = errors.New("provider request timed out")

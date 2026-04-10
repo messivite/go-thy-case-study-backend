@@ -29,3 +29,20 @@ func TestWriteAppError_UserCancelled(t *testing.T) {
 	}
 }
 
+func TestHighlightBounds(t *testing.T) {
+	start, end, ok := highlightBounds("Merhaba Docker World", "docker")
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if start != 8 || end != 14 {
+		t.Fatalf("unexpected bounds: %d-%d", start, end)
+	}
+}
+
+func TestCollectHighlights(t *testing.T) {
+	hs := collectHighlights("go", "Go backend", "Use Go for speed")
+	if len(hs) != 2 {
+		t.Fatalf("expected 2 highlights, got %d", len(hs))
+	}
+}
+

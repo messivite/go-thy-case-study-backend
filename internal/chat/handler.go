@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"slices"
 	"strings"
 	"time"
@@ -93,6 +94,21 @@ type chatListItemResponse struct {
 	LastMessagePreview string `json:"lastMessagePreview"`
 }
 
+type chatListPageResponse struct {
+	TotalCount int                    `json:"totalCount"`
+	HasNext    bool                   `json:"hasNext"`
+	NextCursor string                 `json:"nextCursor,omitempty"`
+	Items      []chatListItemResponse `json:"items"`
+}
+
+type messagesPageResponse struct {
+	TotalCount int           `json:"totalCount"`
+	HasNext    bool          `json:"hasNext"`
+	NextCursor string        `json:"nextCursor,omitempty"`
+	Direction  string        `json:"direction"`
+	Items      []chatMessage `json:"items"`
+}
+
 type listProvidersResponse struct {
 	Default   string             `json:"default"`
 	Providers []providerInfoItem `json:"providers"`
@@ -102,6 +118,33 @@ type providerInfoItem struct {
 	Name    string `json:"name"`
 	Model   string `json:"model"`
 	Enabled bool   `json:"enabled"`
+}
+
+type searchChatsResponse struct {
+	TotalCount int               `json:"totalCount"`
+	HasNext    bool              `json:"hasNext"`
+	NextCursor string            `json:"nextCursor,omitempty"`
+	Items      []searchChatItem  `json:"items"`
+}
+
+type searchChatItem struct {
+	SessionID        string           `json:"sessionId"`
+	Title            string           `json:"title"`
+	SessionCreatedAt string           `json:"sessionCreatedAt"`
+	SessionUpdatedAt string           `json:"sessionUpdatedAt"`
+	LastMessageAt    string           `json:"lastMessageAt,omitempty"`
+	TitleMatched     bool             `json:"titleMatched"`
+	MatchedMessageID string           `json:"matchedMessageId,omitempty"`
+	MatchedRole      string           `json:"matchedRole,omitempty"`
+	MatchedContent   string           `json:"matchedContent,omitempty"`
+	MatchedAt        string           `json:"matchedAt,omitempty"`
+	Highlights       []highlightRange `json:"highlights,omitempty"`
+}
+
+type highlightRange struct {
+	Field string `json:"field"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
 }
 
 const maxSyncMessages = 50
@@ -131,6 +174,143 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, user)
 }
 
+type meUsageResponse struct {
+	QuotaBypass bool              `json:"quotaBypass"`
+	Daily       usageBucketJSON   `json:"daily"`
+	Weekly      usageBucketJSON   `json:"weekly"`
+	PeriodNote  string            `json:"periodNote"`
+}
+
+type usageBucketJSON struct {
+	LimitTokens     int  `json:"limitTokens"`
+	UsedTokens      int  `json:"usedTokens"`
+	RemainingTokens *int `json:"remainingTokens,omitempty"`
+}
+
+func meUsagePeriodNote() string {
+	return "Daily = UTC calendar day; weekly = rolling last 7 days (UTC). Counts only successful LLM completions (total_tokens)."
+}
+
+func toMeUsageResponse(m domain.MeUsage) meUsageResponse {
+	return meUsageResponse{
+		QuotaBypass: m.QuotaBypass,
+		Daily:       toUsageBucketJSON(m.Daily),
+		Weekly:      toUsageBucketJSON(m.Weekly),
+		PeriodNote:  meUsagePeriodNote(),
+	}
+}
+
+func toUsageBucketJSON(w domain.MeUsageWindow) usageBucketJSON {
+	out := usageBucketJSON{
+		LimitTokens: w.LimitTokens,
+		UsedTokens:  w.UsedTokens,
+	}
+	if w.LimitTokens > 0 {
+		rem := w.LimitTokens - w.UsedTokens
+		if rem < 0 {
+			rem = 0
+		}
+		out.RemainingTokens = &rem
+	}
+	return out
+}
+
+func (h *Handler) MeUsage(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.AuthenticatedUserFromContext(r.Context())
+	if !ok {
+		httpx.Unauthorized(w)
+		return
+	}
+	mu, err := h.uc.MeUsage(r.Context(), user.UserID)
+	if err != nil {
+		httpx.Internal(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, toMeUsageResponse(mu))
+}
+
+func (h *Handler) SearchChats(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.AuthenticatedUserFromContext(r.Context())
+	if !ok {
+		httpx.Unauthorized(w)
+		return
+	}
+	query := r.URL.Query().Get("q")
+	limit := 20
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			httpx.BadRequest(w, "invalid limit")
+			return
+		}
+		limit = v
+	}
+	cursor := r.URL.Query().Get("cursor")
+
+	result, err := h.uc.SearchChats(r.Context(), user.UserID, query, limit, cursor)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	items := make([]searchChatItem, 0, len(result.Items))
+	for _, it := range result.Items {
+		item := searchChatItem{
+			SessionID:        it.SessionID,
+			Title:            it.Title,
+			SessionCreatedAt: it.SessionCreatedAt.Format(timeFormat),
+			SessionUpdatedAt: it.SessionUpdatedAt.Format(timeFormat),
+			TitleMatched:     it.TitleMatched,
+		}
+		if !it.LastMessageAt.IsZero() {
+			item.LastMessageAt = it.LastMessageAt.Format(timeFormat)
+		}
+		if it.MatchedMessageID != "" {
+			item.MatchedMessageID = it.MatchedMessageID
+		}
+		if it.MatchedRole != "" {
+			item.MatchedRole = string(it.MatchedRole)
+		}
+		if it.MatchedContent != "" {
+			item.MatchedContent = it.MatchedContent
+		}
+		if !it.MatchedAt.IsZero() {
+			item.MatchedAt = it.MatchedAt.Format(timeFormat)
+		}
+		item.Highlights = collectHighlights(query, it.Title, it.MatchedContent)
+		items = append(items, item)
+	}
+	writeJSON(w, http.StatusOK, searchChatsResponse{
+		TotalCount: result.TotalCount,
+		HasNext:    result.HasNext,
+		NextCursor: result.NextCursor,
+		Items:      items,
+	})
+}
+
+func collectHighlights(query, title, content string) []highlightRange {
+	out := make([]highlightRange, 0, 2)
+	if s, e, ok := highlightBounds(title, query); ok {
+		out = append(out, highlightRange{Field: "title", Start: s, End: e})
+	}
+	if s, e, ok := highlightBounds(content, query); ok {
+		out = append(out, highlightRange{Field: "matchedContent", Start: s, End: e})
+	}
+	return out
+}
+
+func highlightBounds(text, query string) (int, int, bool) {
+	t := strings.ToLower(strings.TrimSpace(text))
+	q := strings.ToLower(strings.TrimSpace(query))
+	if t == "" || q == "" {
+		return 0, 0, false
+	}
+	idx := strings.Index(t, q)
+	if idx < 0 {
+		return 0, 0, false
+	}
+	return idx, idx + len(q), true
+}
+
 func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.AuthenticatedUserFromContext(r.Context())
 	if !ok {
@@ -138,14 +318,50 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessions, err := h.uc.ListSessions(r.Context(), user.UserID)
+	limit := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			httpx.BadRequest(w, "invalid limit")
+			return
+		}
+		limit = v
+	}
+	cursor := r.URL.Query().Get("cursor")
+
+	// Backward compatible: no query => legacy array response
+	if limit == 0 && strings.TrimSpace(cursor) == "" {
+		sessions, err := h.uc.ListSessions(r.Context(), user.UserID)
+		if err != nil {
+			writeAppError(w, err)
+			return
+		}
+		items := make([]chatListItemResponse, 0, len(sessions))
+		for _, s := range sessions {
+			lastPreview, updatedAt := h.uc.GetSessionSummary(r.Context(), s.ID.String())
+			lp, lm := sessionLLMSummary(s)
+			items = append(items, chatListItemResponse{
+				ID:                 s.ID.String(),
+				Title:              s.Title,
+				Provider:           lp,
+				Model:              lm,
+				CreatedAt:          s.CreatedAt.Format(timeFormat),
+				UpdatedAt:          updatedAt.Format(timeFormat),
+				LastMessagePreview: lastPreview,
+			})
+		}
+		writeJSON(w, http.StatusOK, items)
+		return
+	}
+
+	page, err := h.uc.ListSessionsPage(r.Context(), user.UserID, limit, cursor)
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
-	items := make([]chatListItemResponse, 0, len(sessions))
-	for _, s := range sessions {
-		lastPreview, updatedAt := h.uc.GetSessionSummary(r.Context(), s.ID.String())
+	items := make([]chatListItemResponse, 0, len(page.Items))
+	for _, it := range page.Items {
+		s := it.Session
 		lp, lm := sessionLLMSummary(s)
 		items = append(items, chatListItemResponse{
 			ID:                 s.ID.String(),
@@ -153,11 +369,16 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 			Provider:           lp,
 			Model:              lm,
 			CreatedAt:          s.CreatedAt.Format(timeFormat),
-			UpdatedAt:          updatedAt.Format(timeFormat),
-			LastMessagePreview: lastPreview,
+			UpdatedAt:          it.UpdatedAt.Format(timeFormat),
+			LastMessagePreview: it.LastMessagePreview,
 		})
 	}
-	writeJSON(w, http.StatusOK, items)
+	writeJSON(w, http.StatusOK, chatListPageResponse{
+		TotalCount: page.TotalCount,
+		HasNext:    page.HasNext,
+		NextCursor: page.NextCursor,
+		Items:      items,
+	})
 }
 
 func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
@@ -186,6 +407,35 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) DeleteSession(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.AuthenticatedUserFromContext(r.Context())
+	if !ok {
+		httpx.Unauthorized(w)
+		return
+	}
+	chatID := chi.URLParam(r, "chatID")
+	if err := h.uc.DeleteSession(r.Context(), user.UserID, chatID); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.AuthenticatedUserFromContext(r.Context())
+	if !ok {
+		httpx.Unauthorized(w)
+		return
+	}
+	chatID := chi.URLParam(r, "chatID")
+	messageID := chi.URLParam(r, "messageID")
+	if err := h.uc.DeleteOwnMessage(r.Context(), user.UserID, chatID, messageID); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.AuthenticatedUserFromContext(r.Context())
 	if !ok {
@@ -193,13 +443,31 @@ func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID := chi.URLParam(r, "sessionID")
-	messages, err := h.uc.GetSessionMessages(r.Context(), user.UserID, sessionID)
+	chatID := chi.URLParam(r, "chatID")
+	limit := 30
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			httpx.BadRequest(w, "invalid limit")
+			return
+		}
+		limit = v
+	}
+	direction := strings.TrimSpace(r.URL.Query().Get("direction"))
+	cursor := r.URL.Query().Get("cursor")
+
+	page, err := h.uc.GetChatMessagesPage(r.Context(), user.UserID, chatID, limit, direction, cursor)
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toAPIMessages(messages))
+	writeJSON(w, http.StatusOK, messagesPageResponse{
+		TotalCount: page.TotalCount,
+		HasNext:    page.HasNext,
+		NextCursor: page.NextCursor,
+		Direction:  page.Direction,
+		Items:      toAPIMessages(page.Messages),
+	})
 }
 
 func (h *Handler) GetChat(w http.ResponseWriter, r *http.Request) {
@@ -520,7 +788,11 @@ func writeAppError(w http.ResponseWriter, err error) {
 		httpx.Forbidden(w)
 	case errors.Is(err, domain.ErrMissingContent), errors.Is(err, domain.ErrInvalidRole):
 		httpx.BadRequest(w, err.Error())
+	case errors.Is(err, domain.ErrInvalidSessionID), errors.Is(err, domain.ErrInvalidMessageID), errors.Is(err, domain.ErrInvalidSearchCursor), errors.Is(err, domain.ErrSearchQueryTooShort), errors.Is(err, domain.ErrInvalidDirection):
+		httpx.BadRequest(w, err.Error())
 	case errors.Is(err, domain.ErrSessionNotFound):
+		httpx.NotFound(w, err.Error())
+	case errors.Is(err, domain.ErrMessageNotFound):
 		httpx.NotFound(w, err.Error())
 	case errors.Is(err, domain.ErrUnsupportedProvider):
 		httpx.BadRequest(w, err.Error())

@@ -27,6 +27,7 @@ type ChatSession struct {
 	UserID          string
 	Title           string
 	CreatedAt       time.Time
+	DeletedAt       *time.Time
 	LastProvider    string
 	LastModel       string
 	DefaultProvider string
@@ -40,6 +41,7 @@ type ChatMessage struct {
 	Role      Role
 	Content   string
 	CreatedAt time.Time
+	DeletedAt *time.Time
 	Provider  string
 	Model     string
 }
