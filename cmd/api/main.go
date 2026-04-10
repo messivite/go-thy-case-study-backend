@@ -13,6 +13,7 @@ import (
 	usecase "github.com/messivite/go-thy-case-study-backend/internal/application/chat"
 	"github.com/messivite/go-thy-case-study-backend/internal/auth"
 	"github.com/messivite/go-thy-case-study-backend/internal/cache"
+	"github.com/messivite/go-thy-case-study-backend/internal/catalog"
 	"github.com/messivite/go-thy-case-study-backend/internal/chat"
 	"github.com/messivite/go-thy-case-study-backend/internal/config"
 	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
@@ -56,6 +57,7 @@ func main() {
 
 	serviceRoleKey := os.Getenv("SUPABASE_SERVICE_ROLE_KEY")
 	var repository domain.Repository
+	var modelCatalog domain.SupportedModelsCatalog
 	persistence := strings.TrimSpace(envOrDefault("CHAT_PERSISTENCE", "supabase"))
 
 	var quotaRepo domain.QuotaRepository
@@ -64,23 +66,33 @@ func main() {
 	case "supabase":
 		if supabaseURL == "" || serviceRoleKey == "" {
 			log.Println("WARN: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY empty, falling back to memory persistence")
-			repository = repo.NewMemoryRepository()
+			mem := repo.NewMemoryRepository()
+			repository = mem
+			modelCatalog = mem
 			quotaRepo = repo.NewMemoryQuotaRepository()
 		} else {
 			supabaseRepo := repo.NewSupabaseRepository(supabaseURL, serviceRoleKey)
 			repository = supabaseRepo
+			modelCatalog = supabaseRepo
 			quotaRepo = supabaseRepo
 			log.Println("chat persistence: supabase (postgres)")
 		}
 	default:
-		repository = repo.NewMemoryRepository()
+		mem := repo.NewMemoryRepository()
+		repository = mem
+		modelCatalog = mem
 		quotaRepo = repo.NewMemoryQuotaRepository()
 		log.Printf("chat persistence: memory (in-process) [CHAT_PERSISTENCE=%q]", persistence)
 	}
 
 	registry := buildRegistry()
+	syncCtx, syncCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if err := modelCatalog.SyncSupportedModels(syncCtx, catalog.SupportedModelsFromRegistry(registry)); err != nil {
+		log.Printf("WARN: supported models sync: %v", err)
+	}
+	syncCancel()
 
-	uc := usecase.NewUseCase(repository, quotaRepo, registry)
+	uc := usecase.NewUseCase(repository, quotaRepo, registry, modelCatalog)
 	cacheStore, ttlList, ttlMsgs := cache.FromEnv()
 	if cacheStore != nil && (ttlList > 0 || ttlMsgs > 0) {
 		log.Printf("response cache: enabled (list TTL=%s, messages TTL=%s)", ttlList, ttlMsgs)
@@ -152,6 +164,11 @@ func buildRegistryFromEnv() *provider.Registry {
 			Name: "gemini", DefaultModel: "gemini-2.5-flash", RequiredEnvKey: "GEMINI_API_KEY", SupportsStream: true,
 		})
 	}
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+		registry.Register(provider.NewAnthropicProvider(key, "claude-sonnet-4-20250514"), provider.ProviderMeta{
+			Name: "anthropic", DefaultModel: "claude-sonnet-4-20250514", RequiredEnvKey: "ANTHROPIC_API_KEY", SupportsStream: true,
+		})
+	}
 	return registry
 }
 
@@ -161,6 +178,10 @@ func createProvider(name, apiKey, model string) domain.LLMProvider {
 		return provider.NewOpenAIProvider(apiKey, model)
 	case "gemini":
 		return provider.NewGeminiProvider(apiKey, model)
+	case "anthropic":
+		return provider.NewAnthropicProvider(apiKey, model)
+	case "claude":
+		return provider.NewAnthropicProviderNamed(apiKey, model, "claude")
 	default:
 		return nil
 	}

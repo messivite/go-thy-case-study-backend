@@ -6,3 +6,6 @@ providers:
     - name: gemini
       model: gemini-2.5-flash
       env_key: GEMINI_API_KEY
+    - name: anthropic
+      model: claude-sonnet-4-20250514
+      env_key: ANTHROPIC_API_KEY

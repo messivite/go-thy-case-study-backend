@@ -24,4 +24,7 @@ var (
 
 	ErrQuotaDailyExceeded  = errors.New("daily token quota exceeded")
 	ErrQuotaWeeklyExceeded = errors.New("weekly token quota exceeded")
+
+	// ErrModelDiscontinued model katalogda yok veya pasifleştirilmiş (sync / operatör).
+	ErrModelDiscontinued = errors.New("bu model artık desteklenmiyor veya kullanıma kapatıldı")
 )

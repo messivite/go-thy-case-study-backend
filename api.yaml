@@ -1,8 +1,8 @@
 # Chat HTTP sözleşmesi: handler'lar internal/chat + internal/app/server.go içinde (gosupabase codegen bu path'leri kullanmıyor).
 # Sunucu / önbellek ayarı bu dosyada değil: CACHE_ENABLED, CACHE_BACKEND, CACHE_TTL_* , REDIS_* ortam değişkenleri (internal/cache.FromEnv + thy-case-llm cache config).
 # POST /api/chats
-#   body:  { "title"?: string, "provider"?: string, "model"?: string }
-#   201:   { "id": string, "provider": string, "model": string }
+#   body:  { "title"?: string, "provider"?: string, "model"?: string, "content"?: string }
+#   201:   content yoksa { "id", "provider", "model" }; content varsa ayrıca "assistantMessage", "usage"
 # GET /api/chats
 #   200:   legacy array OR pagination object (when limit/cursor verilir):
 #          { "totalCount","hasNext","nextCursor","items":[{...}] }
@@ -21,6 +21,7 @@
 # POST /api/chats/{chatID}/stream
 #   body:  aynı; cevap text/event-stream, data: JSON (meta | delta | done)
 # GET /api/me/usage — günlük/haftalık token kotası + kullanım (UTC; outcome=ok)
+# GET /api/models — seçilebilir LLM modelleri (Supabase’te aktif katalog; açılışta registry ile sync)
 version: "1"
 basePath: /api
 output:
@@ -47,6 +48,10 @@ endpoints:
   - method: GET
     path: /providers
     handler: ListProviders
+    auth: true
+  - method: GET
+    path: /models
+    handler: ListModels
     auth: true
   - method: POST
     path: /chats

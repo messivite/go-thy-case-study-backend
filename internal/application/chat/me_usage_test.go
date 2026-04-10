@@ -46,7 +46,7 @@ func TestUseCase_MeUsage_mergesParallelResults(t *testing.T) {
 		},
 		u: domain.UserTokenUsage{DailyTotal: 100, WeeklyTotal: 900},
 	}
-	uc := NewUseCase(nil, stub, provider.NewRegistry("openai"))
+	uc := NewUseCase(nil, stub, provider.NewRegistry("openai"), nil)
 	got, err := uc.MeUsage(context.Background(), "u1")
 	if err != nil {
 		t.Fatal(err)

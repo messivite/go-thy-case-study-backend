@@ -213,7 +213,7 @@ func cmdProviderAdd(args []string) {
 		fmt.Println("  Custom adapter eklemek için:")
 		fmt.Println("    1) internal/provider/<name>.go dosyası oluşturun")
 		fmt.Println("    2) domain.LLMProvider interface'ini implemente edin")
-		fmt.Println("    3) cmd/api/main.go createProvider() switch'ine ekleyin")
+		fmt.Println("    3) cmd/api/main.go ve cmd/server/main.go createProvider() switch'ine ekleyin")
 	}
 }
 
@@ -696,7 +696,7 @@ func printProviderUsage() {
 
 Alt komutlar:
   add                           Yeni provider ekle
-    --template <name>           Hazır template kullan (openai, gemini, anthropic)
+    --template <name>           Hazır template kullan (openai, gemini, anthropic, claude)
     --name <name>               Provider adı
     --model <model>             Model adı
     --env-key <key>             API key ortam değişkeni adı

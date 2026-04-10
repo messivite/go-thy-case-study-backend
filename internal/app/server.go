@@ -49,6 +49,7 @@ func NewServer(authService auth.AuthService, chatHandler *chat.Handler, cfg Serv
 			r.Get("/me/usage", chatHandler.MeUsage)
 			r.Get("/chats/search", chatHandler.SearchChats)
 			r.Get("/providers", chatHandler.ListProviders)
+			r.Get("/models", chatHandler.ListModels)
 
 			r.Post("/chats", chatHandler.CreateSession)
 			r.Get("/chats", chatHandler.ListSessions)

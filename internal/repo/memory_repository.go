@@ -14,11 +14,13 @@ import (
 )
 
 var _ domain.Repository = (*MemoryRepository)(nil)
+var _ domain.SupportedModelsCatalog = (*MemoryRepository)(nil)
 
 type MemoryRepository struct {
-	mu       sync.RWMutex
-	sessions map[uuid.UUID]domain.ChatSession
-	messages map[uuid.UUID][]domain.ChatMessage
+	mu              sync.RWMutex
+	sessions        map[uuid.UUID]domain.ChatSession
+	messages        map[uuid.UUID][]domain.ChatMessage
+	supportedModels []domain.SupportedModel
 }
 
 func NewMemoryRepository() *MemoryRepository {
@@ -309,6 +311,22 @@ func (r *MemoryRepository) GetMessagesBySession(ctx context.Context, sessionID s
 			out = append(out, m)
 		}
 	}
+	slices.SortFunc(out, func(a, b domain.ChatMessage) int {
+		if a.CreatedAt.Before(b.CreatedAt) {
+			return -1
+		}
+		if a.CreatedAt.After(b.CreatedAt) {
+			return 1
+		}
+		aid, bid := a.ID.String(), b.ID.String()
+		if aid < bid {
+			return -1
+		}
+		if aid > bid {
+			return 1
+		}
+		return 0
+	})
 	return out, nil
 }
 
@@ -372,8 +390,8 @@ func (r *MemoryRepository) SearchChats(ctx context.Context, params domain.Search
 		titleMatched := strings.Contains(strings.ToLower(s.Title), q)
 
 		var (
-			matched      *domain.ChatMessage
-			lastMessage  time.Time
+			matched     *domain.ChatMessage
+			lastMessage time.Time
 		)
 		for i := range r.messages[s.ID] {
 			m := r.messages[s.ID][i]
@@ -461,4 +479,44 @@ func (r *MemoryRepository) SearchChats(ctx context.Context, params domain.Search
 func (r *MemoryRepository) GetUserProfile(ctx context.Context, userID string) (domain.UserProfile, error) {
 	_ = ctx
 	return domain.UserProfile{ID: userID, Locale: "tr", IsActive: true}, nil
+}
+
+func (r *MemoryRepository) SyncSupportedModels(ctx context.Context, rows []domain.SupportedModel) error {
+	_ = ctx
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.supportedModels = append([]domain.SupportedModel(nil), rows...)
+	return nil
+}
+
+func (r *MemoryRepository) ListActiveSupportedModels(ctx context.Context) ([]domain.SupportedModel, error) {
+	_ = ctx
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]domain.SupportedModel, len(r.supportedModels))
+	copy(out, r.supportedModels)
+	slices.SortFunc(out, func(a, b domain.SupportedModel) int {
+		if c := strings.Compare(a.Provider, b.Provider); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ModelID, b.ModelID)
+	})
+	return out, nil
+}
+
+func (r *MemoryRepository) IsModelActive(ctx context.Context, providerName, modelID string) (bool, error) {
+	_ = ctx
+	p := strings.TrimSpace(strings.ToLower(providerName))
+	m := strings.TrimSpace(modelID)
+	if p == "" || m == "" {
+		return false, nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, row := range r.supportedModels {
+		if strings.TrimSpace(strings.ToLower(row.Provider)) == p && strings.TrimSpace(row.ModelID) == m {
+			return true, nil
+		}
+	}
+	return false, nil
 }

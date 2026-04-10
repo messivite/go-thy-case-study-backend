@@ -46,6 +46,18 @@ var BuiltinTemplates = map[string]ProviderTemplate{
 		AuthType:       "x-api-key",
 		Description:    "Anthropic Claude modelleri (Claude 4 Sonnet/Opus, 3.5 Haiku)",
 	},
+	// claude: providers.yaml'da name: claude; aynı API ve ANTHROPIC_API_KEY (createProvider "claude" dalı).
+	"claude": {
+		Name:           "claude",
+		DisplayName:    "Claude (Anthropic API)",
+		DefaultModel:   "claude-sonnet-4-20250514",
+		Models:         []string{"claude-sonnet-4-20250514", "claude-4-opus-20250514", "claude-3.5-haiku-20241022"},
+		EnvKey:         "ANTHROPIC_API_KEY",
+		SupportsStream: true,
+		BaseURL:        "https://api.anthropic.com/v1",
+		AuthType:       "x-api-key",
+		Description:    "Anthropic Messages API — Claude modelleri (providers.yaml kaydı anthropic yerine claude olur)",
+	},
 }
 
 func ListTemplateNames() []string {
