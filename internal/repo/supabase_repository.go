@@ -191,6 +191,34 @@ func (r *SupabaseRepository) GetMessagesBySession(ctx context.Context, sessionID
 	return messages, nil
 }
 
+func (r *SupabaseRepository) SearchChats(ctx context.Context, params domain.SearchChatParams) (domain.SearchChatsResult, error) {
+	body := map[string]any{
+		"p_user_id": params.UserID,
+		"p_query":   params.Query,
+		"p_limit":   params.Limit,
+	}
+	if params.Cursor != nil {
+		body["p_cursor_sort_at"] = params.Cursor.SortAt.UTC().Format(time.RFC3339Nano)
+		body["p_cursor_session_id"] = params.Cursor.SessionID
+	}
+
+	var rows []searchChatRow
+	if err := r.doRequest(ctx, http.MethodPost, "/rpc/llm_search_user_chats", body, &rows); err != nil {
+		return domain.SearchChatsResult{}, fmt.Errorf("search chats: %w", err)
+	}
+	if len(rows) == 0 {
+		return domain.SearchChatsResult{}, nil
+	}
+	items := make([]domain.SearchChatHit, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.toDomain())
+	}
+	return domain.SearchChatsResult{
+		TotalCount: rows[0].TotalCount,
+		Items:      items,
+	}, nil
+}
+
 // ---------------------------------------------------------------------------
 // HTTP helper
 // ---------------------------------------------------------------------------
@@ -285,6 +313,51 @@ type chatMessageRow struct {
 	CreatedAt string  `json:"created_at"`
 	Provider  *string `json:"provider"`
 	Model     *string `json:"model"`
+}
+
+type searchChatRow struct {
+	TotalCount       int     `json:"total_count"`
+	SessionID        string  `json:"session_id"`
+	Title            string  `json:"title"`
+	SessionCreatedAt string  `json:"session_created_at"`
+	SessionUpdatedAt string  `json:"session_updated_at"`
+	LastMessageAt    *string `json:"last_message_at"`
+	TitleMatched     bool    `json:"title_matched"`
+	MatchedMessageID *string `json:"matched_message_id"`
+	MatchedRole      *string `json:"matched_role"`
+	MatchedContent   *string `json:"matched_content"`
+	MatchedAt        *string `json:"matched_at"`
+	SortAt           string  `json:"sort_at"`
+}
+
+func (r searchChatRow) toDomain() domain.SearchChatHit {
+	sessionCreatedAt, _ := time.Parse(time.RFC3339Nano, r.SessionCreatedAt)
+	sessionUpdatedAt, _ := time.Parse(time.RFC3339Nano, r.SessionUpdatedAt)
+	sortAt, _ := time.Parse(time.RFC3339Nano, r.SortAt)
+	out := domain.SearchChatHit{
+		SessionID:        r.SessionID,
+		Title:            r.Title,
+		SessionCreatedAt: sessionCreatedAt,
+		SessionUpdatedAt: sessionUpdatedAt,
+		TitleMatched:     r.TitleMatched,
+		SortAt:           sortAt,
+	}
+	if r.LastMessageAt != nil {
+		out.LastMessageAt, _ = time.Parse(time.RFC3339Nano, *r.LastMessageAt)
+	}
+	if r.MatchedMessageID != nil {
+		out.MatchedMessageID = *r.MatchedMessageID
+	}
+	if r.MatchedRole != nil {
+		out.MatchedRole = domain.Role(*r.MatchedRole)
+	}
+	if r.MatchedContent != nil {
+		out.MatchedContent = *r.MatchedContent
+	}
+	if r.MatchedAt != nil {
+		out.MatchedAt, _ = time.Parse(time.RFC3339Nano, *r.MatchedAt)
+	}
+	return out
 }
 
 func (r chatMessageRow) toDomain() domain.ChatMessage {

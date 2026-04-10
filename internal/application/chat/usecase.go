@@ -1,8 +1,11 @@
 package chat
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
@@ -17,6 +20,13 @@ type SyncResult struct {
 	SyncedMessages   []domain.ChatMessage
 	AssistantMessage domain.ChatMessage
 	Usage            map[string]any
+}
+
+type SearchResult struct {
+	TotalCount int
+	Items      []domain.SearchChatHit
+	NextCursor string
+	HasNext    bool
 }
 
 type UseCase struct {
@@ -108,6 +118,139 @@ func (uc *UseCase) checkQuota(ctx context.Context, userID string) error {
 		return domain.ErrQuotaWeeklyExceeded
 	}
 	return nil
+}
+
+// MeUsage loads quota limits and token usage in parallel (two independent store calls).
+func (uc *UseCase) MeUsage(ctx context.Context, userID string) (domain.MeUsage, error) {
+	var (
+		q      domain.UserQuota
+		u      domain.UserTokenUsage
+		errQ   error
+		errU   error
+		wg     sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		q, errQ = uc.quotaRepo.GetUserQuota(ctx, userID)
+	}()
+	go func() {
+		defer wg.Done()
+		u, errU = uc.quotaRepo.GetUserTokenUsage(ctx, userID)
+	}()
+	wg.Wait()
+	if errQ != nil {
+		return domain.MeUsage{}, errQ
+	}
+	if errU != nil {
+		return domain.MeUsage{}, errU
+	}
+	return domain.MeUsage{
+		QuotaBypass: q.QuotaBypass,
+		Daily: domain.MeUsageWindow{
+			LimitTokens: q.DailyTokenLimit,
+			UsedTokens:  u.DailyTotal,
+		},
+		Weekly: domain.MeUsageWindow{
+			LimitTokens: q.WeeklyTokenLimit,
+			UsedTokens:  u.WeeklyTotal,
+		},
+	}, nil
+}
+
+func (uc *UseCase) SearchChats(
+	ctx context.Context,
+	userID, query string,
+	limit int,
+	cursorToken string,
+) (SearchResult, error) {
+	q := strings.TrimSpace(query)
+	if len(q) < 2 {
+		return SearchResult{}, domain.ErrSearchQueryTooShort
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	cursor, err := decodeSearchCursor(cursorToken)
+	if err != nil {
+		return SearchResult{}, err
+	}
+
+	raw, err := uc.repo.SearchChats(ctx, domain.SearchChatParams{
+		UserID: userID,
+		Query:  q,
+		Limit:  limit + 1, // one extra row for hasNext
+		Cursor: cursor,
+	})
+	if err != nil {
+		return SearchResult{}, err
+	}
+
+	hasNext := len(raw.Items) > limit
+	items := raw.Items
+	if hasNext {
+		items = items[:limit]
+	}
+
+	next := ""
+	if hasNext && len(items) > 0 {
+		last := items[len(items)-1]
+		next = encodeSearchCursor(domain.SearchCursor{
+			SortAt:    last.SortAt,
+			SessionID: last.SessionID,
+		})
+	}
+
+	return SearchResult{
+		TotalCount: raw.TotalCount,
+		Items:      items,
+		HasNext:    hasNext,
+		NextCursor: next,
+	}, nil
+}
+
+type searchCursorWire struct {
+	SortAt    string `json:"sortAt"`
+	SessionID string `json:"sessionId"`
+}
+
+func encodeSearchCursor(c domain.SearchCursor) string {
+	wire := searchCursorWire{
+		SortAt:    c.SortAt.UTC().Format(time.RFC3339Nano),
+		SessionID: c.SessionID,
+	}
+	b, _ := json.Marshal(wire)
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func decodeSearchCursor(token string) (*domain.SearchCursor, error) {
+	t := strings.TrimSpace(token)
+	if t == "" {
+		return nil, nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(t)
+	if err != nil {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	var wire searchCursorWire
+	if err := json.Unmarshal(b, &wire); err != nil {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	if strings.TrimSpace(wire.SessionID) == "" {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	sortAt, err := time.Parse(time.RFC3339Nano, wire.SortAt)
+	if err != nil {
+		return nil, domain.ErrInvalidSearchCursor
+	}
+	return &domain.SearchCursor{
+		SortAt:    sortAt.UTC(),
+		SessionID: wire.SessionID,
+	}, nil
 }
 
 func (uc *UseCase) SendMessage(

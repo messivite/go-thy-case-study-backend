@@ -60,6 +60,16 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /chats/search:
+    get:
+      tags: [misc]
+      summary: SearchChats
+      operationId: searchChats
+      responses:
+        "200":
+          description: OK
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /chats/{chatID}:
     get:
       tags: [chats]
@@ -168,6 +178,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthenticatedUser"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /me/usage:
+    get:
+      tags: [misc]
+      summary: MeUsage
+      operationId: meUsage
+      responses:
+        "200":
+          description: OK
         "401":
           $ref: "#/components/responses/Unauthorized"
   /providers:

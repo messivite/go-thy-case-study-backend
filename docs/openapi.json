@@ -400,6 +400,23 @@
         ]
       }
     },
+    "/chats/search": {
+      "get": {
+        "operationId": "searchChats",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "SearchChats",
+        "tags": [
+          "misc"
+        ]
+      }
+    },
     "/chats/{chatID}": {
       "get": {
         "operationId": "getChat",
@@ -584,6 +601,23 @@
         "summary": "Mevcut kullanıcı bilgisi",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/me/usage": {
+      "get": {
+        "operationId": "meUsage",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "MeUsage",
+        "tags": [
+          "misc"
         ]
       }
     },

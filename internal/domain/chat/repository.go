@@ -16,4 +16,5 @@ type Repository interface {
 	SaveMessage(ctx context.Context, sessionID, userID string, role Role, content, provider, model string) (ChatMessage, error)
 	SaveMessages(ctx context.Context, sessionID, userID string, messages []BatchMessage) ([]ChatMessage, error)
 	GetMessagesBySession(ctx context.Context, sessionID string) ([]ChatMessage, error)
+	SearchChats(ctx context.Context, params SearchChatParams) (SearchChatsResult, error)
 }

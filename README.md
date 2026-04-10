@@ -340,6 +340,8 @@ Eğer `api.yaml` değişmiş ama üretilen dosyalar commit edilmemişse pipeline
 |---|---|---|---|
 | `GET` | `/health` veya `/api/health` | Hayır | Health check (`OK`) |
 | `GET` | `/api/me` | Evet | JWT'den user bilgisi |
+| `GET` | `/api/me/usage` | Evet | Günlük/haftalık token kullanım-kota özeti |
+| `GET` | `/api/chats/search?q=...&limit=...&cursor=...` | Evet | Kullanıcıya ait sohbetlerde title + user/assistant mesaj araması (cursor pagination) |
 | `GET` | `/api/providers` | Evet | Aktif provider listesi ve default bilgi |
 | `POST` | `/api/chats` | Evet | Yeni sohbet oluşturur |
 | `GET` | `/api/chats` | Evet | Sohbet listesini döner |

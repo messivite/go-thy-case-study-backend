@@ -9,6 +9,8 @@ var (
 	ErrUnauthorized        = errors.New("not authorized")
 	ErrSessionNotFound     = errors.New("session not found")
 	ErrInvalidSessionID    = errors.New("invalid session id")
+	ErrInvalidSearchCursor = errors.New("invalid search cursor")
+	ErrSearchQueryTooShort = errors.New("search query must be at least 2 characters")
 
 	ErrProviderAuthFailed  = errors.New("provider authentication failed")
 	ErrProviderTimeout     = errors.New("provider request timed out")

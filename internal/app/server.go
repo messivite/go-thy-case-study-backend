@@ -46,6 +46,8 @@ func NewServer(authService auth.AuthService, chatHandler *chat.Handler, cfg Serv
 		r.Group(func(r chi.Router) {
 			r.Use(auth.AuthMiddleware(authService))
 			r.Get("/me", chatHandler.Me)
+			r.Get("/me/usage", chatHandler.MeUsage)
+			r.Get("/chats/search", chatHandler.SearchChats)
 			r.Get("/providers", chatHandler.ListProviders)
 
 			r.Post("/chats", chatHandler.CreateSession)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -183,4 +184,104 @@ func (r *MemoryRepository) GetMessagesBySession(ctx context.Context, sessionID s
 	out := make([]domain.ChatMessage, len(msgs))
 	copy(out, msgs)
 	return out, nil
+}
+
+func (r *MemoryRepository) SearchChats(ctx context.Context, params domain.SearchChatParams) (domain.SearchChatsResult, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	q := strings.ToLower(strings.TrimSpace(params.Query))
+	if q == "" {
+		return domain.SearchChatsResult{}, nil
+	}
+
+	hits := make([]domain.SearchChatHit, 0)
+	for _, s := range r.sessions {
+		if s.UserID != params.UserID {
+			continue
+		}
+		titleMatched := strings.Contains(strings.ToLower(s.Title), q)
+
+		var (
+			matched      *domain.ChatMessage
+			lastMessage  time.Time
+		)
+		for i := range r.messages[s.ID] {
+			m := r.messages[s.ID][i]
+			if m.CreatedAt.After(lastMessage) {
+				lastMessage = m.CreatedAt
+			}
+			if m.Role != domain.RoleUser && m.Role != domain.RoleAssistant {
+				continue
+			}
+			if strings.Contains(strings.ToLower(m.Content), q) {
+				if matched == nil || m.CreatedAt.After(matched.CreatedAt) {
+					cp := m
+					matched = &cp
+				}
+			}
+		}
+		if !titleMatched && matched == nil {
+			continue
+		}
+		updatedAt := lastMessage
+		if updatedAt.IsZero() {
+			updatedAt = s.CreatedAt
+		}
+		sortAt := updatedAt
+		hit := domain.SearchChatHit{
+			SessionID:        s.ID.String(),
+			Title:            s.Title,
+			SessionCreatedAt: s.CreatedAt,
+			SessionUpdatedAt: updatedAt,
+			LastMessageAt:    lastMessage,
+			TitleMatched:     titleMatched,
+			SortAt:           sortAt,
+		}
+		if matched != nil {
+			hit.MatchedMessageID = matched.ID.String()
+			hit.MatchedRole = matched.Role
+			hit.MatchedContent = matched.Content
+			hit.MatchedAt = matched.CreatedAt
+			hit.SortAt = matched.CreatedAt
+		}
+		hits = append(hits, hit)
+	}
+
+	slices.SortFunc(hits, func(a, b domain.SearchChatHit) int {
+		if a.SortAt.After(b.SortAt) {
+			return -1
+		}
+		if a.SortAt.Before(b.SortAt) {
+			return 1
+		}
+		if a.SessionID > b.SessionID {
+			return -1
+		}
+		if a.SessionID < b.SessionID {
+			return 1
+		}
+		return 0
+	})
+
+	total := len(hits)
+	filtered := hits
+	if params.Cursor != nil {
+		filtered = make([]domain.SearchChatHit, 0, len(hits))
+		for _, h := range hits {
+			if h.SortAt.Before(params.Cursor.SortAt) || (h.SortAt.Equal(params.Cursor.SortAt) && h.SessionID < params.Cursor.SessionID) {
+				filtered = append(filtered, h)
+			}
+		}
+	}
+
+	limit := params.Limit
+	if limit <= 0 || limit > len(filtered) {
+		limit = len(filtered)
+	}
+
+	return domain.SearchChatsResult{
+		TotalCount: total,
+		Items:      filtered[:limit],
+	}, nil
 }

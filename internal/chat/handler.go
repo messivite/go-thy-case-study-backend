@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"slices"
 	"strings"
 	"time"
@@ -104,6 +105,33 @@ type providerInfoItem struct {
 	Enabled bool   `json:"enabled"`
 }
 
+type searchChatsResponse struct {
+	TotalCount int               `json:"totalCount"`
+	HasNext    bool              `json:"hasNext"`
+	NextCursor string            `json:"nextCursor,omitempty"`
+	Items      []searchChatItem  `json:"items"`
+}
+
+type searchChatItem struct {
+	SessionID        string           `json:"sessionId"`
+	Title            string           `json:"title"`
+	SessionCreatedAt string           `json:"sessionCreatedAt"`
+	SessionUpdatedAt string           `json:"sessionUpdatedAt"`
+	LastMessageAt    string           `json:"lastMessageAt,omitempty"`
+	TitleMatched     bool             `json:"titleMatched"`
+	MatchedMessageID string           `json:"matchedMessageId,omitempty"`
+	MatchedRole      string           `json:"matchedRole,omitempty"`
+	MatchedContent   string           `json:"matchedContent,omitempty"`
+	MatchedAt        string           `json:"matchedAt,omitempty"`
+	Highlights       []highlightRange `json:"highlights,omitempty"`
+}
+
+type highlightRange struct {
+	Field string `json:"field"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
 const maxSyncMessages = 50
 
 func (h *Handler) ListProviders(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +157,143 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, user)
+}
+
+type meUsageResponse struct {
+	QuotaBypass bool              `json:"quotaBypass"`
+	Daily       usageBucketJSON   `json:"daily"`
+	Weekly      usageBucketJSON   `json:"weekly"`
+	PeriodNote  string            `json:"periodNote"`
+}
+
+type usageBucketJSON struct {
+	LimitTokens     int  `json:"limitTokens"`
+	UsedTokens      int  `json:"usedTokens"`
+	RemainingTokens *int `json:"remainingTokens,omitempty"`
+}
+
+func meUsagePeriodNote() string {
+	return "Daily = UTC calendar day; weekly = rolling last 7 days (UTC). Counts only successful LLM completions (total_tokens)."
+}
+
+func toMeUsageResponse(m domain.MeUsage) meUsageResponse {
+	return meUsageResponse{
+		QuotaBypass: m.QuotaBypass,
+		Daily:       toUsageBucketJSON(m.Daily),
+		Weekly:      toUsageBucketJSON(m.Weekly),
+		PeriodNote:  meUsagePeriodNote(),
+	}
+}
+
+func toUsageBucketJSON(w domain.MeUsageWindow) usageBucketJSON {
+	out := usageBucketJSON{
+		LimitTokens: w.LimitTokens,
+		UsedTokens:  w.UsedTokens,
+	}
+	if w.LimitTokens > 0 {
+		rem := w.LimitTokens - w.UsedTokens
+		if rem < 0 {
+			rem = 0
+		}
+		out.RemainingTokens = &rem
+	}
+	return out
+}
+
+func (h *Handler) MeUsage(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.AuthenticatedUserFromContext(r.Context())
+	if !ok {
+		httpx.Unauthorized(w)
+		return
+	}
+	mu, err := h.uc.MeUsage(r.Context(), user.UserID)
+	if err != nil {
+		httpx.Internal(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, toMeUsageResponse(mu))
+}
+
+func (h *Handler) SearchChats(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.AuthenticatedUserFromContext(r.Context())
+	if !ok {
+		httpx.Unauthorized(w)
+		return
+	}
+	query := r.URL.Query().Get("q")
+	limit := 20
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			httpx.BadRequest(w, "invalid limit")
+			return
+		}
+		limit = v
+	}
+	cursor := r.URL.Query().Get("cursor")
+
+	result, err := h.uc.SearchChats(r.Context(), user.UserID, query, limit, cursor)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	items := make([]searchChatItem, 0, len(result.Items))
+	for _, it := range result.Items {
+		item := searchChatItem{
+			SessionID:        it.SessionID,
+			Title:            it.Title,
+			SessionCreatedAt: it.SessionCreatedAt.Format(timeFormat),
+			SessionUpdatedAt: it.SessionUpdatedAt.Format(timeFormat),
+			TitleMatched:     it.TitleMatched,
+		}
+		if !it.LastMessageAt.IsZero() {
+			item.LastMessageAt = it.LastMessageAt.Format(timeFormat)
+		}
+		if it.MatchedMessageID != "" {
+			item.MatchedMessageID = it.MatchedMessageID
+		}
+		if it.MatchedRole != "" {
+			item.MatchedRole = string(it.MatchedRole)
+		}
+		if it.MatchedContent != "" {
+			item.MatchedContent = it.MatchedContent
+		}
+		if !it.MatchedAt.IsZero() {
+			item.MatchedAt = it.MatchedAt.Format(timeFormat)
+		}
+		item.Highlights = collectHighlights(query, it.Title, it.MatchedContent)
+		items = append(items, item)
+	}
+	writeJSON(w, http.StatusOK, searchChatsResponse{
+		TotalCount: result.TotalCount,
+		HasNext:    result.HasNext,
+		NextCursor: result.NextCursor,
+		Items:      items,
+	})
+}
+
+func collectHighlights(query, title, content string) []highlightRange {
+	out := make([]highlightRange, 0, 2)
+	if s, e, ok := highlightBounds(title, query); ok {
+		out = append(out, highlightRange{Field: "title", Start: s, End: e})
+	}
+	if s, e, ok := highlightBounds(content, query); ok {
+		out = append(out, highlightRange{Field: "matchedContent", Start: s, End: e})
+	}
+	return out
+}
+
+func highlightBounds(text, query string) (int, int, bool) {
+	t := strings.ToLower(strings.TrimSpace(text))
+	q := strings.ToLower(strings.TrimSpace(query))
+	if t == "" || q == "" {
+		return 0, 0, false
+	}
+	idx := strings.Index(t, q)
+	if idx < 0 {
+		return 0, 0, false
+	}
+	return idx, idx + len(q), true
 }
 
 func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
@@ -519,6 +684,8 @@ func writeAppError(w http.ResponseWriter, err error) {
 	case errors.Is(err, domain.ErrUnauthorized):
 		httpx.Forbidden(w)
 	case errors.Is(err, domain.ErrMissingContent), errors.Is(err, domain.ErrInvalidRole):
+		httpx.BadRequest(w, err.Error())
+	case errors.Is(err, domain.ErrInvalidSessionID), errors.Is(err, domain.ErrInvalidSearchCursor), errors.Is(err, domain.ErrSearchQueryTooShort):
 		httpx.BadRequest(w, err.Error())
 	case errors.Is(err, domain.ErrSessionNotFound):
 		httpx.NotFound(w, err.Error())

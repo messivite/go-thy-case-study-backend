@@ -11,6 +11,7 @@
 #   201:   { "assistantMessage": { "role", "content", "provider", "model" }, "usage"?: object }
 # POST /api/chats/{chatID}/stream
 #   body:  aynı; cevap text/event-stream, data: JSON (meta | delta | done)
+# GET /api/me/usage — günlük/haftalık token kotası + kullanım (UTC; outcome=ok)
 version: "1"
 basePath: /api
 output:
@@ -25,6 +26,14 @@ endpoints:
   - method: GET
     path: /me
     handler: Me
+    auth: true
+  - method: GET
+    path: /me/usage
+    handler: MeUsage
+    auth: true
+  - method: GET
+    path: /chats/search
+    handler: SearchChats
     auth: true
   - method: GET
     path: /providers
