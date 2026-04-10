@@ -48,6 +48,10 @@ func NewUseCase(repo domain.Repository, quotaRepo domain.QuotaRepository, regist
 	return &UseCase{repo: repo, quotaRepo: quotaRepo, registry: registry}
 }
 
+func (uc *UseCase) GetUserProfile(ctx context.Context, userID string) (domain.UserProfile, error) {
+	return uc.repo.GetUserProfile(ctx, userID)
+}
+
 func (uc *UseCase) CreateSession(ctx context.Context, userID, title, provider, model string) (domain.ChatSession, error) {
 	dp := strings.TrimSpace(provider)
 	dm := strings.TrimSpace(model)

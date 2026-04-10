@@ -89,27 +89,6 @@
         ],
         "type": "object"
       },
-      "AuthenticatedUser": {
-        "properties": {
-          "Email": {
-            "format": "email",
-            "type": "string"
-          },
-          "Role": {
-            "type": "string"
-          },
-          "UserID": {
-            "format": "uuid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "UserID",
-          "Email",
-          "Role"
-        ],
-        "type": "object"
-      },
       "ChatDetail": {
         "properties": {
           "id": {
@@ -279,6 +258,149 @@
         "required": [
           "default",
           "providers"
+        ],
+        "type": "object"
+      },
+      "Me": {
+        "description": "Kimlik (user) + uygulama profili (profile).",
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/MeProfile"
+          },
+          "user": {
+            "$ref": "#/components/schemas/MeUser"
+          }
+        },
+        "required": [
+          "user",
+          "profile"
+        ],
+        "type": "object"
+      },
+      "MeProfile": {
+        "description": "public.profiles satırı (display_name, avatar_url, tercihler, …).",
+        "properties": {
+          "avatarUrl": {
+            "format": "uri",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "isAnonymous": {
+            "type": "boolean"
+          },
+          "lastSeenAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "onboardingCompleted": {
+            "type": "boolean"
+          },
+          "preferredModel": {
+            "type": "string"
+          },
+          "preferredProvider": {
+            "type": "string"
+          },
+          "role": {
+            "description": "profiles.role (user | admin | moderator)",
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "isActive",
+          "onboardingCompleted",
+          "isAnonymous"
+        ],
+        "type": "object"
+      },
+      "MeUser": {
+        "description": "JWT / access token özeti (gosupabase doğrulaması sonrası).",
+        "properties": {
+          "appMetadata": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "aud": {
+            "type": "string"
+          },
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "exp": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "iat": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "iss": {
+            "type": "string"
+          },
+          "issuedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "role": {
+            "description": "RBAC birincil rol (SUPABASE_ROLE_CLAIM_KEY)",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "userMetadata": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "id"
         ],
         "type": "object"
       },
@@ -650,7 +772,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AuthenticatedUser"
+                  "$ref": "#/components/schemas/Me"
                 }
               }
             },

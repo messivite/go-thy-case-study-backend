@@ -125,7 +125,7 @@ func operationFor(e Endpoint) string {
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthenticatedUser"
+                $ref: "#/components/schemas/Me"
         "401":
           $ref: "#/components/responses/Unauthorized"
 `, m, sec)
@@ -327,13 +327,52 @@ paths:
         type: string
         format: uuid
   schemas:
-    AuthenticatedUser:
+    MeUser:
       type: object
+      description: JWT / access token özeti (gosupabase doğrulaması sonrası).
       properties:
-        UserID: { type: string, format: uuid }
-        Email: { type: string, format: email }
-        Role: { type: string }
-      required: [UserID, Email, Role]
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { type: string, description: RBAC birincil rol (SUPABASE_ROLE_CLAIM_KEY) }
+        roles: { type: array, items: { type: string } }
+        phone: { type: string }
+        sessionId: { type: string }
+        iss: { type: string }
+        aud: { type: string }
+        iat: { type: integer, format: int64 }
+        exp: { type: integer, format: int64 }
+        issuedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        appMetadata: { type: object, additionalProperties: true }
+        userMetadata: { type: object, additionalProperties: true }
+      required: [id]
+    MeProfile:
+      type: object
+      description: public.profiles satırı (display_name, avatar_url, tercihler, …).
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        avatarUrl: { type: string, format: uri }
+        role: { type: string, description: profiles.role (user | admin | moderator) }
+        isActive: { type: boolean }
+        preferredProvider: { type: string }
+        preferredModel: { type: string }
+        locale: { type: string }
+        timezone: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        lastSeenAt: { type: string, format: date-time }
+        onboardingCompleted: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        isAnonymous: { type: boolean }
+      required: [id, isActive, onboardingCompleted, isAnonymous]
+    Me:
+      type: object
+      description: Kimlik (user) + uygulama profili (profile).
+      properties:
+        user: { $ref: "#/components/schemas/MeUser" }
+        profile: { $ref: "#/components/schemas/MeProfile" }
+      required: [user, profile]
     ProviderInfo:
       type: object
       properties:

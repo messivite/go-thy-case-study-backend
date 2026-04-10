@@ -15,16 +15,24 @@ import (
 
 	usecase "github.com/messivite/go-thy-case-study-backend/internal/application/chat"
 	"github.com/messivite/go-thy-case-study-backend/internal/auth"
+	"github.com/messivite/go-thy-case-study-backend/internal/cache"
 	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
 	"github.com/messivite/go-thy-case-study-backend/internal/httpx"
 )
 
 type Handler struct {
-	uc *usecase.UseCase
+	uc          *usecase.UseCase
+	respCache   cache.Store
+	ttlChatList time.Duration
+	ttlChatMsgs time.Duration
 }
 
-func NewHandler(uc *usecase.UseCase) *Handler {
-	return &Handler{uc: uc}
+func NewHandler(uc *usecase.UseCase, opts ...HandlerOption) *Handler {
+	h := &Handler{uc: uc, respCache: cache.Nop{}}
+	for _, o := range opts {
+		o(h)
+	}
+	return h
 }
 
 type createSessionRequest struct {
@@ -171,7 +179,110 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		httpx.Unauthorized(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, user)
+	prof, err := h.uc.GetUserProfile(r.Context(), user.UserID)
+	if err != nil {
+		httpx.Internal(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, toMeResponse(user, prof))
+}
+
+// meResponse is GET /api/me — JWT özeti (user) + public.profiles satırı (profile).
+type meResponse struct {
+	User    meUserSection    `json:"user"`
+	Profile meProfileSection `json:"profile"`
+}
+
+type meUserSection struct {
+	ID               string         `json:"id"`
+	Email            string         `json:"email,omitempty"`
+	Role             string         `json:"role,omitempty"`
+	Roles            []string       `json:"roles,omitempty"`
+	Phone            string         `json:"phone,omitempty"`
+	SessionID        string         `json:"sessionId,omitempty"`
+	Issuer           string         `json:"iss,omitempty"`
+	Audience         string         `json:"aud,omitempty"`
+	IssuedAt         int64          `json:"iat,omitempty"`
+	ExpiresAt        int64          `json:"exp,omitempty"`
+	IssuedAtRFC3339  string         `json:"issuedAt,omitempty"`
+	ExpiresAtRFC3339 string         `json:"expiresAt,omitempty"`
+	AppMetadata      map[string]any `json:"appMetadata,omitempty"`
+	UserMetadata     map[string]any `json:"userMetadata,omitempty"`
+}
+
+type meProfileSection struct {
+	ID                  string         `json:"id"`
+	DisplayName         string         `json:"displayName,omitempty"`
+	AvatarURL           string         `json:"avatarUrl,omitempty"`
+	Role                string         `json:"role,omitempty"`
+	IsActive            bool           `json:"isActive"`
+	PreferredProvider   string         `json:"preferredProvider,omitempty"`
+	PreferredModel      string         `json:"preferredModel,omitempty"`
+	Locale              string         `json:"locale,omitempty"`
+	Timezone            string         `json:"timezone,omitempty"`
+	Metadata            map[string]any `json:"metadata,omitempty"`
+	LastSeenAt          string         `json:"lastSeenAt,omitempty"`
+	OnboardingCompleted bool           `json:"onboardingCompleted"`
+	CreatedAt           string         `json:"createdAt,omitempty"`
+	UpdatedAt           string         `json:"updatedAt,omitempty"`
+	IsAnonymous         bool           `json:"isAnonymous"`
+}
+
+func toMeResponse(u *auth.AuthenticatedUser, p domain.UserProfile) meResponse {
+	out := meResponse{
+		User:    meUserSection{},
+		Profile: toMeProfileSection(p),
+	}
+	if u != nil {
+		out.User = meUserSection{
+			ID:           u.UserID,
+			Email:        u.Email,
+			Role:         u.Role,
+			Roles:        u.Roles,
+			Phone:        u.Phone,
+			SessionID:    u.SessionID,
+			Issuer:       u.Issuer,
+			Audience:     u.Audience,
+			IssuedAt:     u.IssuedAt,
+			ExpiresAt:    u.ExpiresAt,
+			AppMetadata:  u.AppMetadata,
+			UserMetadata: u.UserMetadata,
+		}
+		if u.IssuedAt > 0 {
+			out.User.IssuedAtRFC3339 = time.Unix(u.IssuedAt, 0).UTC().Format(time.RFC3339)
+		}
+		if u.ExpiresAt > 0 {
+			out.User.ExpiresAtRFC3339 = time.Unix(u.ExpiresAt, 0).UTC().Format(time.RFC3339)
+		}
+	}
+	return out
+}
+
+func toMeProfileSection(p domain.UserProfile) meProfileSection {
+	sec := meProfileSection{
+		ID:                  p.ID,
+		DisplayName:         p.DisplayName,
+		AvatarURL:           p.AvatarURL,
+		Role:                p.Role,
+		IsActive:            p.IsActive,
+		PreferredProvider:   p.PreferredProvider,
+		PreferredModel:      p.PreferredModel,
+		Locale:              p.Locale,
+		Timezone:            p.Timezone,
+		Metadata:            p.Metadata,
+		OnboardingCompleted: p.OnboardingCompleted,
+		IsAnonymous:         p.IsAnonymous,
+	}
+	if p.LastSeenAt != nil {
+		sec.LastSeenAt = p.LastSeenAt.UTC().Format(time.RFC3339Nano)
+	}
+	if !p.CreatedAt.IsZero() {
+		sec.CreatedAt = p.CreatedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if !p.UpdatedAt.IsZero() {
+		sec.UpdatedAt = p.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	}
+	return sec
 }
 
 type meUsageResponse struct {
@@ -318,6 +429,11 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	listKey := cache.KeyChatList(user.UserID, r.URL.RawQuery)
+	if h.tryWriteCachedJSON(w, r, listKey, h.ttlChatList) {
+		return
+	}
+
 	limit := 0
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		v, err := strconv.Atoi(raw)
@@ -350,6 +466,7 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 				LastMessagePreview: lastPreview,
 			})
 		}
+		h.cachePutJSON(r.Context(), listKey, h.ttlChatList, items)
 		writeJSON(w, http.StatusOK, items)
 		return
 	}
@@ -373,12 +490,14 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 			LastMessagePreview: it.LastMessagePreview,
 		})
 	}
-	writeJSON(w, http.StatusOK, chatListPageResponse{
+	body := chatListPageResponse{
 		TotalCount: page.TotalCount,
 		HasNext:    page.HasNext,
 		NextCursor: page.NextCursor,
 		Items:      items,
-	})
+	}
+	h.cachePutJSON(r.Context(), listKey, h.ttlChatList, body)
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
@@ -400,6 +519,7 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.invalidateChatList(r.Context(), user.UserID)
 	writeJSON(w, http.StatusCreated, createSessionResponse{
 		ID:       session.ID.String(),
 		Provider: session.DefaultProvider,
@@ -418,6 +538,7 @@ func (h *Handler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 		writeAppError(w, err)
 		return
 	}
+	h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -433,6 +554,7 @@ func (h *Handler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		writeAppError(w, err)
 		return
 	}
+	h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -444,6 +566,10 @@ func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chatID := chi.URLParam(r, "chatID")
+	msgKey := cache.KeyChatMessages(user.UserID, chatID, r.URL.RawQuery)
+	if h.tryWriteCachedJSON(w, r, msgKey, h.ttlChatMsgs) {
+		return
+	}
 	limit := 30
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		v, err := strconv.Atoi(raw)
@@ -461,13 +587,15 @@ func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, messagesPageResponse{
+	body := messagesPageResponse{
 		TotalCount: page.TotalCount,
 		HasNext:    page.HasNext,
 		NextCursor: page.NextCursor,
 		Direction:  page.Direction,
 		Items:      toAPIMessages(page.Messages),
-	})
+	}
+	h.cachePutJSON(r.Context(), msgKey, h.ttlChatMsgs, body)
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (h *Handler) GetChat(w http.ResponseWriter, r *http.Request) {
@@ -521,6 +649,7 @@ func (h *Handler) PostMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
 	writeJSON(w, http.StatusCreated, assistantResponse{
 		AssistantMessage: chatMessage{
 			Role:     string(assistantMsg.Role),
@@ -598,6 +727,7 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 				}
 				cancelStream(len(partialRaw))
 			}
+			h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
 			flusher.Flush()
 			return
 		case ev, ok := <-events:
@@ -613,6 +743,7 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 					}})
 					_ = writeSSE(w, map[string]any{"type": "done"})
 				}
+				h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
 				flusher.Flush()
 				return
 			}
@@ -709,6 +840,7 @@ func (h *Handler) SyncMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
 	writeJSON(w, http.StatusCreated, syncResponse{
 		SyncedCount:      len(result.SyncedMessages),
 		SyncedMessages:   toAPIMessages(result.SyncedMessages),

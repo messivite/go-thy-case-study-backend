@@ -315,6 +315,21 @@ func (r *SupabaseRepository) SearchChats(ctx context.Context, params domain.Sear
 	}, nil
 }
 
+func (r *SupabaseRepository) GetUserProfile(ctx context.Context, userID string) (domain.UserProfile, error) {
+	if _, err := uuid.Parse(userID); err != nil {
+		return domain.UserProfile{}, fmt.Errorf("get profile: %w", err)
+	}
+	path := "/profiles?id=eq." + userID + "&select=*"
+	var rows []profileRow
+	if err := r.doRequest(ctx, http.MethodGet, path, nil, &rows); err != nil {
+		return domain.UserProfile{}, fmt.Errorf("get profile: %w", err)
+	}
+	if len(rows) == 0 {
+		return domain.UserProfile{ID: userID, Locale: "tr"}, nil
+	}
+	return rows[0].toDomain()
+}
+
 // ---------------------------------------------------------------------------
 // HTTP helper
 // ---------------------------------------------------------------------------
@@ -363,6 +378,72 @@ func (r *SupabaseRepository) doRequest(ctx context.Context, method, path string,
 // ---------------------------------------------------------------------------
 // Row types for JSON mapping
 // ---------------------------------------------------------------------------
+
+type profileRow struct {
+	ID                  string          `json:"id"`
+	DisplayName         *string         `json:"display_name"`
+	AvatarURL           *string         `json:"avatar_url"`
+	Role                string          `json:"role"`
+	IsActive            bool            `json:"is_active"`
+	PreferredProvider   *string         `json:"preferred_provider"`
+	PreferredModel      *string         `json:"preferred_model"`
+	Locale              string          `json:"locale"`
+	Timezone            *string         `json:"timezone"`
+	Metadata            json.RawMessage `json:"metadata"`
+	LastSeenAt          *string         `json:"last_seen_at"`
+	OnboardingCompleted bool            `json:"onboarding_completed"`
+	CreatedAt           string          `json:"created_at"`
+	UpdatedAt           string          `json:"updated_at"`
+	IsAnonymous         bool            `json:"is_anonymous"`
+}
+
+func (r profileRow) toDomain() (domain.UserProfile, error) {
+	out := domain.UserProfile{
+		ID:                  r.ID,
+		Role:                r.Role,
+		IsActive:            r.IsActive,
+		Locale:              r.Locale,
+		OnboardingCompleted: r.OnboardingCompleted,
+		IsAnonymous:         r.IsAnonymous,
+	}
+	if r.DisplayName != nil {
+		out.DisplayName = *r.DisplayName
+	}
+	if r.AvatarURL != nil {
+		out.AvatarURL = *r.AvatarURL
+	}
+	if r.PreferredProvider != nil {
+		out.PreferredProvider = *r.PreferredProvider
+	}
+	if r.PreferredModel != nil {
+		out.PreferredModel = *r.PreferredModel
+	}
+	if r.Timezone != nil {
+		out.Timezone = *r.Timezone
+	}
+	var err error
+	out.CreatedAt, err = time.Parse(time.RFC3339Nano, r.CreatedAt)
+	if err != nil {
+		out.CreatedAt = time.Time{}
+	}
+	out.UpdatedAt, err = time.Parse(time.RFC3339Nano, r.UpdatedAt)
+	if err != nil {
+		out.UpdatedAt = time.Time{}
+	}
+	if r.LastSeenAt != nil && *r.LastSeenAt != "" {
+		t, e := time.Parse(time.RFC3339Nano, *r.LastSeenAt)
+		if e == nil {
+			out.LastSeenAt = &t
+		}
+	}
+	if len(r.Metadata) > 0 && string(r.Metadata) != "null" {
+		var m map[string]any
+		if json.Unmarshal(r.Metadata, &m) == nil && m != nil {
+			out.Metadata = m
+		}
+	}
+	return out, nil
+}
 
 type chatSessionRow struct {
 	ID               string  `json:"id"`

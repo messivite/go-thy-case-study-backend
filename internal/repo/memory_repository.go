@@ -457,3 +457,8 @@ func (r *MemoryRepository) SearchChats(ctx context.Context, params domain.Search
 		Items:      filtered[:limit],
 	}, nil
 }
+
+func (r *MemoryRepository) GetUserProfile(ctx context.Context, userID string) (domain.UserProfile, error) {
+	_ = ctx
+	return domain.UserProfile{ID: userID, Locale: "tr", IsActive: true}, nil
+}
