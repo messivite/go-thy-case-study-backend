@@ -44,6 +44,12 @@ func main() {
 		handleDeploy(args[1], args[2:])
 	case "doctor":
 		cmdDoctor()
+	case "cache":
+		if len(args) < 2 {
+			printCacheUsage()
+			os.Exit(1)
+		}
+		handleCache(args[1:])
 	case "version":
 		fmt.Printf("thy-case-llm v%s\n", version)
 	case "help", "--help", "-h":
@@ -657,6 +663,7 @@ Komutlar:
   templates list                Mevcut provider template'lerini listele
   templates show <name>         Template detayını göster
   doctor                        Hızlı sistem sağlık kontrolü
+  cache config                  HTTP yanıt önbelleği için etkileşimli .env ayarı
   deploy list                   Deploy hedeflerini listele (railway, fly, docker, vercel, …)
   deploy show <id>              Bir hedefin açıklaması ve üreteceği dosyalar
   deploy init <id> [flags]      Şablon dosyalarını repoya yazar (Dockerfile, fly.toml, …)

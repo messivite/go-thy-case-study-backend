@@ -37,6 +37,9 @@ func TestPrintUsage_mentionsDockerDeployTarget(t *testing.T) {
 	if !strings.Contains(s, "deploy list") || !strings.Contains(s, "docker") {
 		t.Fatalf("main usage should list docker as deploy target:\n%s", s)
 	}
+	if !strings.Contains(s, "cache config") {
+		t.Fatalf("main usage should document cache config:\n%s", s)
+	}
 }
 
 func TestPrintDeployUsage_mentionsDockerId(t *testing.T) {

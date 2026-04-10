@@ -12,6 +12,7 @@ import (
 	"github.com/messivite/go-thy-case-study-backend/internal/app"
 	usecase "github.com/messivite/go-thy-case-study-backend/internal/application/chat"
 	"github.com/messivite/go-thy-case-study-backend/internal/auth"
+	"github.com/messivite/go-thy-case-study-backend/internal/cache"
 	"github.com/messivite/go-thy-case-study-backend/internal/chat"
 	"github.com/messivite/go-thy-case-study-backend/internal/config"
 	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
@@ -80,7 +81,11 @@ func main() {
 	registry := buildRegistry()
 
 	uc := usecase.NewUseCase(repository, quotaRepo, registry)
-	chatHandler := chat.NewHandler(uc)
+	cacheStore, ttlList, ttlMsgs := cache.FromEnv()
+	if cacheStore != nil && (ttlList > 0 || ttlMsgs > 0) {
+		log.Printf("response cache: enabled (list TTL=%s, messages TTL=%s)", ttlList, ttlMsgs)
+	}
+	chatHandler := chat.NewHandler(uc, chat.WithResponseCache(cacheStore, ttlList, ttlMsgs))
 
 	docsPath := os.Getenv("SWAGGER_PUBLIC_PATH")
 	if docsPath == "" {

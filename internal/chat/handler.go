@@ -15,16 +15,24 @@ import (
 
 	usecase "github.com/messivite/go-thy-case-study-backend/internal/application/chat"
 	"github.com/messivite/go-thy-case-study-backend/internal/auth"
+	"github.com/messivite/go-thy-case-study-backend/internal/cache"
 	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
 	"github.com/messivite/go-thy-case-study-backend/internal/httpx"
 )
 
 type Handler struct {
-	uc *usecase.UseCase
+	uc          *usecase.UseCase
+	respCache   cache.Store
+	ttlChatList time.Duration
+	ttlChatMsgs time.Duration
 }
 
-func NewHandler(uc *usecase.UseCase) *Handler {
-	return &Handler{uc: uc}
+func NewHandler(uc *usecase.UseCase, opts ...HandlerOption) *Handler {
+	h := &Handler{uc: uc, respCache: cache.Nop{}}
+	for _, o := range opts {
+		o(h)
+	}
+	return h
 }
 
 type createSessionRequest struct {
@@ -318,6 +326,11 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	listKey := cache.KeyChatList(user.UserID, r.URL.RawQuery)
+	if h.tryWriteCachedJSON(w, r, listKey, h.ttlChatList) {
+		return
+	}
+
 	limit := 0
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		v, err := strconv.Atoi(raw)
@@ -350,6 +363,7 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 				LastMessagePreview: lastPreview,
 			})
 		}
+		h.cachePutJSON(r.Context(), listKey, h.ttlChatList, items)
 		writeJSON(w, http.StatusOK, items)
 		return
 	}
@@ -373,12 +387,14 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 			LastMessagePreview: it.LastMessagePreview,
 		})
 	}
-	writeJSON(w, http.StatusOK, chatListPageResponse{
+	body := chatListPageResponse{
 		TotalCount: page.TotalCount,
 		HasNext:    page.HasNext,
 		NextCursor: page.NextCursor,
 		Items:      items,
-	})
+	}
+	h.cachePutJSON(r.Context(), listKey, h.ttlChatList, body)
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
@@ -400,6 +416,7 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.invalidateChatList(r.Context(), user.UserID)
 	writeJSON(w, http.StatusCreated, createSessionResponse{
 		ID:       session.ID.String(),
 		Provider: session.DefaultProvider,
@@ -418,6 +435,7 @@ func (h *Handler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 		writeAppError(w, err)
 		return
 	}
+	h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -433,6 +451,7 @@ func (h *Handler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		writeAppError(w, err)
 		return
 	}
+	h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -444,6 +463,10 @@ func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chatID := chi.URLParam(r, "chatID")
+	msgKey := cache.KeyChatMessages(user.UserID, chatID, r.URL.RawQuery)
+	if h.tryWriteCachedJSON(w, r, msgKey, h.ttlChatMsgs) {
+		return
+	}
 	limit := 30
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		v, err := strconv.Atoi(raw)
@@ -461,13 +484,15 @@ func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, messagesPageResponse{
+	body := messagesPageResponse{
 		TotalCount: page.TotalCount,
 		HasNext:    page.HasNext,
 		NextCursor: page.NextCursor,
 		Direction:  page.Direction,
 		Items:      toAPIMessages(page.Messages),
-	})
+	}
+	h.cachePutJSON(r.Context(), msgKey, h.ttlChatMsgs, body)
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (h *Handler) GetChat(w http.ResponseWriter, r *http.Request) {
@@ -521,6 +546,7 @@ func (h *Handler) PostMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
 	writeJSON(w, http.StatusCreated, assistantResponse{
 		AssistantMessage: chatMessage{
 			Role:     string(assistantMsg.Role),
@@ -598,6 +624,7 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 				}
 				cancelStream(len(partialRaw))
 			}
+			h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
 			flusher.Flush()
 			return
 		case ev, ok := <-events:
@@ -613,6 +640,7 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 					}})
 					_ = writeSSE(w, map[string]any{"type": "done"})
 				}
+				h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
 				flusher.Flush()
 				return
 			}
@@ -709,6 +737,7 @@ func (h *Handler) SyncMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
 	writeJSON(w, http.StatusCreated, syncResponse{
 		SyncedCount:      len(result.SyncedMessages),
 		SyncedMessages:   toAPIMessages(result.SyncedMessages),
