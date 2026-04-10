@@ -60,6 +60,7 @@ Bu proje, tarafımdan geliştirilen `gosupabase` kütüphanesi üzerine kuruludu
 - **Chat persistence:** Varsayılan `supabase`; opsiyonel `memory`
 - **HTTP yanıt önbelleği (opsiyonel):** `GET /api/chats` ve `GET /api/chats/{id}/messages` için env ile açılır (`memory` veya `redis`)
 - **LLM:** `providers.yaml` + environment variable anahtarları
+- **Desteklenen modeller:** Açılışta kod tabanlı katalog ile veritabanı (veya bellek modunda in-process liste) senkron; istemci seçenekleri bu kaynaktan gelir, katalogda aktif olmayan modele yapılan çağrılar reddedilir
 - **Kota ve audit:** Supabase tabloları + trigger + RPC
 
 ## Proje yapısı
@@ -76,6 +77,7 @@ internal/
   cache/                   -> HTTP yanıt önbelleği (bellek veya Redis)
   chat/                    -> Sohbet ve ilgili HTTP handler’lar
   config/                  -> Sağlayıcı yapılandırması ve şablonlar
+  catalog/                 -> Kayıtlı sağlayıcılar + yerleşik şablonlardan “seçilebilir model” kataloğu üretimi
   deploy/                  -> Dağıtım hedefleri (list / show / init) ve şablonlar
   domain/chat/             -> Domain modelleri, repository arayüzleri, hatalar
   dotenv/                  -> Yerel .env yükleme yardımcıları
@@ -113,6 +115,22 @@ providers:
 ```
 
 Uygulama açılışında `providers.yaml` okunur. Env key değeri bulunamayan provider kaydı atlanır ve log uyarısı üretilir.
+
+## Desteklenen LLM modelleri (katalog ve yönetim)
+
+Hangi modellerin **seçilebilir** ve **kullanıma açık** sayılacağı, tek bir “yaşayan katalog” üzerinden yönetilir; böylece arayüzde gösterilen liste ile sunucunun kabul ettiği modeller uyumlu kalır.
+
+**Kaynak (gerçek):** Çalışma anında registry’de **etkin** olan sağlayıcılar ile bu projedeki **yerleşik şablonlar** birleştirilir. Şablonda tanımlı model listesi varsa o liste kullanılır; özel veya şablonsuz bir sağlayıcı için en azından yapılandırmadaki varsayılan model satırı kataloğa eklenir. Yani katalog, “hangi API anahtarları yüklü” ve “kodda hangi modeller tanımlı” gerçeğine bağlıdır; `providers.yaml`’daki satırlar tek başına yeterli değildir, env ile devre dışı kalan sağlayıcı katalogda da yer almaz.
+
+**Senkronizasyon:** API süreci her başladığında bu katalog, kalıcı modda Supabase’teki ilgili tabloya yazılır (güvenli tanımlı bir RPC ile toplu güncelleme). Tabloda artık yeni listede bulunmayan sağlayıcı/model çiftleri **pasif** işaretlenir; böylece bir modeli koddan veya şablondan kaldırdığınızda bir sonraki deploy veya restart sonrası hem liste hem doğrulama tarafı güncellenir. Aynı model sonra tekrar katalog üretimine girerse bir sonraki senkronla yeniden aktifleşir. Tamamen kalıcı olarak kapatmak istediğiniz senaryoda modeli üretim listesinden çıkarmanız gerekir; operasyon ekibi doğrudan veritabanında pasif bayrağı kullanarak da müdahale edebilir, ancak bir sonraki uygulama senkronu katalogda hâlâ varsa satırı tekrar açabilir.
+
+**İstemci deneyimi:** Kimliği doğrulanmış kullanıcılar, arayüzde gösterecekleri model listesini bu katalogdan (API üzerinden) alır; provider özetinden ayrı tutulur çünkü biri “hangi entegrasyonlar açık”, diğeri “hangi model kimliği seçilebilir” sorusunu yanıtlar.
+
+**İstek doğrulaması:** Sohbet açma, mesaj gönderme, stream ve toplu sync gibi LLM çağrısı yapan tüm akışlarda, çözümlenen sağlayıcı ve kullanılacak efektif model katalogda **aktif** değilse istek anlamlı bir hata ile reddedilir. Böylece kullanıcı eski bir istemci sürümünden kaldırılmış veya devre dışı bir model kimliği gönderse bile sunucu tutarlı şekilde “bu model artık kullanılamıyor” mesajına yakın bir davranış sergiler.
+
+**Bellek modu:** `CHAT_PERSISTENCE` bellek olarak seçildiğinde aynı senkron ve doğrulama mantığı yalnızca süreç içi bellekte çalışır; Postgres’e yazılmaz. Yerel geliştirmede migration uygulamadan da bu akış test edilebilir.
+
+**RLS:** Kalıcı ortamda tabloya yalnızca servis rolü tam yazım yapar; oturum açmış son kullanıcılar için satır düzeyi güvenlik, yalnızca **aktif** kayıtların okunmasına izin verecek şekilde tanımlıdır (doğrudan Supabase istemcisi ile okuma yapan uygulamalar için).
 
 ## thy-case-llm CLI
 
