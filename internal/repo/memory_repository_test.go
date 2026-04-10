@@ -2,7 +2,9 @@ package repo
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
 )
@@ -33,6 +35,35 @@ func TestMemoryRepositorySessionLifecycle(t *testing.T) {
 	}
 	if got.LastProvider != "gemini" || got.LastModel != "gemini-2.5-flash" {
 		t.Fatalf("last llm: got provider=%q model=%q", got.LastProvider, got.LastModel)
+	}
+}
+
+func TestMemoryRepositoryGetChatSessionsByUser_excludesSoftDeleted(t *testing.T) {
+	r := NewMemoryRepository()
+	ctx := context.Background()
+	const uid = "user-soft-del-list"
+
+	keep, err := r.CreateChatSession(ctx, uid, "keep", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone, err := r.CreateChatSession(ctx, uid, "gone", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SoftDeleteChatSession(ctx, gone.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := r.GetChatSessionsByUser(ctx, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 active session, got %d", len(list))
+	}
+	if list[0].ID != keep.ID {
+		t.Fatalf("expected kept session %s, got %s", keep.ID, list[0].ID)
 	}
 }
 
@@ -115,5 +146,128 @@ func TestMemoryRepositorySaveMessagesErrors(t *testing.T) {
 	_, err = r.SaveMessages(ctx, "11111111-1111-1111-1111-111111111111", "user-1", []domain.BatchMessage{{Content: "x"}})
 	if err == nil {
 		t.Fatal("expected session not found error")
+	}
+}
+
+func TestMemoryRepositoryGetChatSessionsByUserPage_empty(t *testing.T) {
+	r := NewMemoryRepository()
+	ctx := context.Background()
+	page, err := r.GetChatSessionsByUserPage(ctx, "nobody", 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.TotalCount != 0 || len(page.Items) != 0 {
+		t.Fatalf("expected empty page, got total=%d items=%d", page.TotalCount, len(page.Items))
+	}
+}
+
+func TestMemoryRepositoryGetChatSessionsByUserPage_paginationAndPreview(t *testing.T) {
+	r := NewMemoryRepository()
+	ctx := context.Background()
+	const uid = "user-page-1"
+
+	older, err := r.CreateChatSession(ctx, uid, "older", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.SaveMessage(ctx, older.ID.String(), uid, domain.RoleUser, "msg-old", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	newer, err := r.CreateChatSession(ctx, uid, "newer", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.SaveMessage(ctx, newer.ID.String(), uid, domain.RoleUser, "msg-new", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Full list: newest session first by last message time
+	pageAll, err := r.GetChatSessionsByUserPage(ctx, uid, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pageAll.TotalCount != 2 || len(pageAll.Items) != 2 {
+		t.Fatalf("total=%d items=%d", pageAll.TotalCount, len(pageAll.Items))
+	}
+	if pageAll.Items[0].Session.ID != newer.ID {
+		t.Fatalf("expected newer session first, got %s", pageAll.Items[0].Session.ID)
+	}
+	if pageAll.Items[0].LastMessagePreview != "msg-new" {
+		t.Fatalf("preview: %q", pageAll.Items[0].LastMessagePreview)
+	}
+
+	// First page: limit 1 => only newest
+	p1, err := r.GetChatSessionsByUserPage(ctx, uid, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p1.Items) != 1 || p1.Items[0].Session.ID != newer.ID {
+		t.Fatalf("p1: %+v", p1.Items)
+	}
+
+	cur := &domain.SessionCursor{SortAt: p1.Items[0].SortAt, SessionID: p1.Items[0].Session.ID.String()}
+	p2, err := r.GetChatSessionsByUserPage(ctx, uid, 1, cur)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p2.Items) != 1 || p2.Items[0].Session.ID != older.ID {
+		t.Fatalf("p2: %+v", p2.Items)
+	}
+}
+
+func TestMemoryRepositoryGetChatSessionsByUserPage_longPreviewSkipsDeleted(t *testing.T) {
+	r := NewMemoryRepository()
+	ctx := context.Background()
+	const uid = "user-page-2"
+
+	s, err := r.CreateChatSession(ctx, uid, "t", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	long := strings.Repeat("x", 90)
+	if _, err := r.SaveMessage(ctx, s.ID.String(), uid, domain.RoleUser, long, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	page, err := r.GetChatSessionsByUserPage(ctx, uid, 5, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("items=%d", len(page.Items))
+	}
+	if len(page.Items[0].LastMessagePreview) != 80 {
+		t.Fatalf("expected 80 runes preview, got %d", len(page.Items[0].LastMessagePreview))
+	}
+
+	// Two messages: delete the newer (last); preview should fall back to older content
+	s2, err := r.CreateChatSession(ctx, uid, "t2", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.SaveMessage(ctx, s2.ID.String(), uid, domain.RoleUser, "keep-me", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	mNew, err := r.SaveMessage(ctx, s2.ID.String(), uid, domain.RoleUser, "delete-me", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SoftDeleteUserMessage(ctx, s2.ID.String(), mNew.ID.String(), uid); err != nil {
+		t.Fatal(err)
+	}
+	page2, err := r.GetChatSessionsByUserPage(ctx, uid, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, it := range page2.Items {
+		if it.Session.ID == s2.ID && it.LastMessagePreview == "keep-me" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected preview keep-me after soft-delete last msg, items=%+v", page2.Items)
 	}
 }
