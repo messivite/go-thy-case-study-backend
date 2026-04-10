@@ -144,6 +144,21 @@ func operationFor(e Endpoint) string {
         "401":
           $ref: "#/components/responses/Unauthorized"
 `, m, sec)
+	case "ListModels":
+		return fmt.Sprintf(`    %s:
+      tags: [models]
+      summary: Kullanılabilir LLM model listesi
+      operationId: listModels
+%s      responses:
+        "200":
+          description: Aktif model kataloğu (provider + model)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListModelsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+`, m, sec)
 	case "CreateSession":
 		return fmt.Sprintf(`    %s:
       tags: [chats]
@@ -306,6 +321,8 @@ tags:
     description: Kimlik doğrulama
   - name: providers
     description: LLM provider yönetimi
+  - name: models
+    description: Desteklenen LLM modelleri
   - name: chats
     description: Sohbet oturumları
   - name: messages
@@ -388,18 +405,40 @@ paths:
           type: array
           items: { $ref: "#/components/schemas/ProviderInfo" }
       required: [default, providers]
+    SupportedModelItem:
+      type: object
+      properties:
+        provider: { type: string }
+        model: { type: string }
+        displayName: { type: string }
+        supportsStream: { type: boolean }
+      required: [provider, model, displayName, supportsStream]
+    ListModelsResponse:
+      type: object
+      properties:
+        models:
+          type: array
+          items: { $ref: "#/components/schemas/SupportedModelItem" }
+      required: [models]
     CreateSessionRequest:
       type: object
       properties:
         title: { type: string }
         provider: { type: string }
         model: { type: string }
+        content:
+          type: string
+          description: |
+            Opsiyonel ilk kullanıcı mesajı. Doluysa oturum açılır açılmaz LLM yanıtı üretilir;
+            cevapta assistantMessage alanı döner (ayrıca POST /chats/{id}/messages çağrısı gerekmez).
     CreateSessionResponse:
       type: object
       properties:
         id: { type: string, format: uuid }
         provider: { type: string }
         model: { type: string }
+        assistantMessage: { $ref: "#/components/schemas/ChatMessage" }
+        usage: { type: object, additionalProperties: true }
       required: [id, provider, model]
     ChatMessage:
       type: object

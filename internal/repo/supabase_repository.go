@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +17,7 @@ import (
 )
 
 var _ domain.Repository = (*SupabaseRepository)(nil)
+var _ domain.SupportedModelsCatalog = (*SupabaseRepository)(nil)
 
 type SupabaseRepository struct {
 	baseURL        string
@@ -240,7 +243,7 @@ func (r *SupabaseRepository) GetMessagesBySession(ctx context.Context, sessionID
 		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
 	}
 
-	path := fmt.Sprintf("/chat_messages?session_id=eq.%s&deleted_at=is.null&order=created_at.asc", sessionID)
+	path := fmt.Sprintf("/chat_messages?session_id=eq.%s&deleted_at=is.null&order=created_at.asc,id.asc", sessionID)
 
 	var rows []chatMessageRow
 	if err := r.doRequest(ctx, http.MethodGet, path, nil, &rows); err != nil {
@@ -330,6 +333,52 @@ func (r *SupabaseRepository) GetUserProfile(ctx context.Context, userID string) 
 	return rows[0].toDomain()
 }
 
+func (r *SupabaseRepository) SyncSupportedModels(ctx context.Context, rows []domain.SupportedModel) error {
+	payload := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		payload = append(payload, map[string]any{
+			"provider":        row.Provider,
+			"model_id":        row.ModelID,
+			"display_name":    row.DisplayName,
+			"supports_stream": row.SupportsStream,
+		})
+	}
+	body := map[string]any{"p_payload": payload}
+	return r.doRequest(ctx, http.MethodPost, "/rpc/llm_sync_supported_models", body, nil)
+}
+
+func (r *SupabaseRepository) ListActiveSupportedModels(ctx context.Context) ([]domain.SupportedModel, error) {
+	path := "/llm_supported_models?is_active=eq.true&select=provider,model_id,display_name,supports_stream&order=provider.asc,model_id.asc"
+	var rows []supportedModelRow
+	if err := r.doRequest(ctx, http.MethodGet, path, nil, &rows); err != nil {
+		return nil, fmt.Errorf("list supported models: %w", err)
+	}
+	out := make([]domain.SupportedModel, 0, len(rows))
+	for i := range rows {
+		out = append(out, rows[i].toDomain())
+	}
+	return out, nil
+}
+
+func (r *SupabaseRepository) IsModelActive(ctx context.Context, providerName, modelID string) (bool, error) {
+	p := strings.TrimSpace(providerName)
+	m := strings.TrimSpace(modelID)
+	if p == "" || m == "" {
+		return false, nil
+	}
+	q := url.Values{}
+	q.Set("provider", "eq."+p)
+	q.Set("model_id", "eq."+m)
+	q.Set("is_active", "eq.true")
+	q.Set("select", "provider")
+	path := "/llm_supported_models?" + q.Encode()
+	var rows []supportedModelRow
+	if err := r.doRequest(ctx, http.MethodGet, path, nil, &rows); err != nil {
+		return false, fmt.Errorf("check supported model: %w", err)
+	}
+	return len(rows) > 0, nil
+}
+
 // ---------------------------------------------------------------------------
 // HTTP helper
 // ---------------------------------------------------------------------------
@@ -378,6 +427,22 @@ func (r *SupabaseRepository) doRequest(ctx context.Context, method, path string,
 // ---------------------------------------------------------------------------
 // Row types for JSON mapping
 // ---------------------------------------------------------------------------
+
+type supportedModelRow struct {
+	Provider       string `json:"provider"`
+	ModelID        string `json:"model_id"`
+	DisplayName    string `json:"display_name"`
+	SupportsStream bool   `json:"supports_stream"`
+}
+
+func (r supportedModelRow) toDomain() domain.SupportedModel {
+	return domain.SupportedModel{
+		Provider:       r.Provider,
+		ModelID:        r.ModelID,
+		DisplayName:    r.DisplayName,
+		SupportsStream: r.SupportsStream,
+	}
+}
 
 type profileRow struct {
 	ID                  string          `json:"id"`
@@ -446,16 +511,16 @@ func (r profileRow) toDomain() (domain.UserProfile, error) {
 }
 
 type chatSessionRow struct {
-	ID               string  `json:"id"`
-	UserID           string  `json:"user_id"`
-	Title            string  `json:"title"`
-	CreatedAt        string  `json:"created_at"`
-	UpdatedAt        string  `json:"updated_at"`
-	DeletedAt        *string `json:"deleted_at"`
-	LastProvider     *string `json:"last_provider"`
-	LastModel        *string `json:"last_model"`
-	DefaultProvider  *string `json:"default_provider"`
-	DefaultModel     *string `json:"default_model"`
+	ID              string  `json:"id"`
+	UserID          string  `json:"user_id"`
+	Title           string  `json:"title"`
+	CreatedAt       string  `json:"created_at"`
+	UpdatedAt       string  `json:"updated_at"`
+	DeletedAt       *string `json:"deleted_at"`
+	LastProvider    *string `json:"last_provider"`
+	LastModel       *string `json:"last_model"`
+	DefaultProvider *string `json:"default_provider"`
+	DefaultModel    *string `json:"default_model"`
 }
 
 func (r chatSessionRow) toDomain() domain.ChatSession {
@@ -516,22 +581,21 @@ type searchChatRow struct {
 }
 
 type sessionPageRow struct {
-	TotalCount        int     `json:"total_count"`
-	SessionID         string  `json:"session_id"`
-	Title             string  `json:"title"`
-	CreatedAt         string  `json:"created_at"`
-	UpdatedAt         string  `json:"updated_at"`
-	DefaultProvider   *string `json:"default_provider"`
-	DefaultModel      *string `json:"default_model"`
-	LastProvider      *string `json:"last_provider"`
-	LastModel         *string `json:"last_model"`
+	TotalCount         int     `json:"total_count"`
+	SessionID          string  `json:"session_id"`
+	Title              string  `json:"title"`
+	CreatedAt          string  `json:"created_at"`
+	UpdatedAt          string  `json:"updated_at"`
+	DefaultProvider    *string `json:"default_provider"`
+	DefaultModel       *string `json:"default_model"`
+	LastProvider       *string `json:"last_provider"`
+	LastModel          *string `json:"last_model"`
 	LastMessagePreview *string `json:"last_message_preview"`
-	SortAt            string  `json:"sort_at"`
+	SortAt             string  `json:"sort_at"`
 }
 
 func (r sessionPageRow) toDomain() domain.SessionListItem {
 	createdAt, _ := time.Parse(time.RFC3339Nano, r.CreatedAt)
-	updatedAt, _ := time.Parse(time.RFC3339Nano, r.UpdatedAt)
 	sortAt, _ := time.Parse(time.RFC3339Nano, r.SortAt)
 	sid, _ := uuid.Parse(r.SessionID)
 	s := domain.ChatSession{
@@ -555,10 +619,12 @@ func (r sessionPageRow) toDomain() domain.SessionListItem {
 	if r.LastMessagePreview != nil {
 		preview = *r.LastMessagePreview
 	}
+	// updatedAt: RPC sort_at = son mesaj zamanı veya oturum güncellemesi; liste satırında
+	// "son aktivite" ile önizleme metninin tutması için session.updated_at yerine sort_at kullan.
 	return domain.SessionListItem{
 		Session:            s,
 		LastMessagePreview: preview,
-		UpdatedAt:          updatedAt,
+		UpdatedAt:          sortAt,
 		SortAt:             sortAt,
 	}
 }

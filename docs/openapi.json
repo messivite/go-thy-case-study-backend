@@ -185,6 +185,10 @@
       },
       "CreateSessionRequest": {
         "properties": {
+          "content": {
+            "description": "Opsiyonel ilk kullanıcı mesajı. Doluysa oturum açılır açılmaz LLM yanıtı üretilir;\ncevapta assistantMessage alanı döner (ayrıca POST /chats/{id}/messages çağrısı gerekmez).\n",
+            "type": "string"
+          },
           "model": {
             "type": "string"
           },
@@ -199,6 +203,9 @@
       },
       "CreateSessionResponse": {
         "properties": {
+          "assistantMessage": {
+            "$ref": "#/components/schemas/ChatMessage"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -208,6 +215,10 @@
           },
           "provider": {
             "type": "string"
+          },
+          "usage": {
+            "additionalProperties": true,
+            "type": "object"
           }
         },
         "required": [
@@ -240,6 +251,20 @@
         },
         "required": [
           "error"
+        ],
+        "type": "object"
+      },
+      "ListModelsResponse": {
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/SupportedModelItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "models"
         ],
         "type": "object"
       },
@@ -440,6 +465,29 @@
           "name",
           "model",
           "enabled"
+        ],
+        "type": "object"
+      },
+      "SupportedModelItem": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "supportsStream": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "displayName",
+          "supportsStream"
         ],
         "type": "object"
       }
@@ -805,6 +853,30 @@
         ]
       }
     },
+    "/models": {
+      "get": {
+        "operationId": "listModels",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListModelsResponse"
+                }
+              }
+            },
+            "description": "Aktif model kataloğu (provider + model)"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "Kullanılabilir LLM model listesi",
+        "tags": [
+          "models"
+        ]
+      }
+    },
     "/providers": {
       "get": {
         "operationId": "listProviders",
@@ -853,6 +925,10 @@
     {
       "description": "LLM provider yönetimi",
       "name": "providers"
+    },
+    {
+      "description": "Desteklenen LLM modelleri",
+      "name": "models"
     },
     {
       "description": "Sohbet oturumları",

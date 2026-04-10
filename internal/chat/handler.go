@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,12 +39,17 @@ type createSessionRequest struct {
 	Title    string `json:"title"`
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
+	// Content doluysa oturum oluşturulduktan hemen sonra bu metinle LLM çağrılır;
+	// yanıtta assistantMessage dönür (ayrıca POST /messages atmana gerek kalmaz).
+	Content string `json:"content,omitempty"`
 }
 
 type createSessionResponse struct {
-	ID       string `json:"id"`
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
+	ID               string         `json:"id"`
+	Provider         string         `json:"provider"`
+	Model            string         `json:"model"`
+	AssistantMessage *chatMessage   `json:"assistantMessage,omitempty"`
+	Usage            map[string]any `json:"usage,omitempty"`
 }
 
 type postMessageRequest struct {
@@ -85,11 +90,11 @@ type syncResponse struct {
 }
 
 type chatDetailResponse struct {
-	ID        string        `json:"id"`
-	Title     string        `json:"title"`
-	Provider  string        `json:"provider"`
-	Model     string        `json:"model"`
-	Messages  []chatMessage `json:"messages"`
+	ID       string        `json:"id"`
+	Title    string        `json:"title"`
+	Provider string        `json:"provider"`
+	Model    string        `json:"model"`
+	Messages []chatMessage `json:"messages"`
 }
 
 type chatListItemResponse struct {
@@ -128,11 +133,22 @@ type providerInfoItem struct {
 	Enabled bool   `json:"enabled"`
 }
 
+type supportedModelItem struct {
+	Provider       string `json:"provider"`
+	Model          string `json:"model"`
+	DisplayName    string `json:"displayName"`
+	SupportsStream bool   `json:"supportsStream"`
+}
+
+type listModelsResponse struct {
+	Models []supportedModelItem `json:"models"`
+}
+
 type searchChatsResponse struct {
-	TotalCount int               `json:"totalCount"`
-	HasNext    bool              `json:"hasNext"`
-	NextCursor string            `json:"nextCursor,omitempty"`
-	Items      []searchChatItem  `json:"items"`
+	TotalCount int              `json:"totalCount"`
+	HasNext    bool             `json:"hasNext"`
+	NextCursor string           `json:"nextCursor,omitempty"`
+	Items      []searchChatItem `json:"items"`
 }
 
 type searchChatItem struct {
@@ -171,6 +187,32 @@ func (h *Handler) ListProviders(w http.ResponseWriter, r *http.Request) {
 		Default:   h.uc.DefaultProvider(),
 		Providers: items,
 	})
+}
+
+func (h *Handler) ListModels(w http.ResponseWriter, r *http.Request) {
+	if _, ok := auth.AuthenticatedUserFromContext(r.Context()); !ok {
+		httpx.Unauthorized(w)
+		return
+	}
+	rows, err := h.uc.ListSupportedModels(r.Context())
+	if err != nil {
+		httpx.Internal(w)
+		return
+	}
+	items := make([]supportedModelItem, 0, len(rows))
+	for _, row := range rows {
+		dn := row.DisplayName
+		if strings.TrimSpace(dn) == "" {
+			dn = row.ModelID
+		}
+		items = append(items, supportedModelItem{
+			Provider:       row.Provider,
+			Model:          row.ModelID,
+			DisplayName:    dn,
+			SupportsStream: row.SupportsStream,
+		})
+	}
+	writeJSON(w, http.StatusOK, listModelsResponse{Models: items})
 }
 
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
@@ -286,10 +328,10 @@ func toMeProfileSection(p domain.UserProfile) meProfileSection {
 }
 
 type meUsageResponse struct {
-	QuotaBypass bool              `json:"quotaBypass"`
-	Daily       usageBucketJSON   `json:"daily"`
-	Weekly      usageBucketJSON   `json:"weekly"`
-	PeriodNote  string            `json:"periodNote"`
+	QuotaBypass bool            `json:"quotaBypass"`
+	Daily       usageBucketJSON `json:"daily"`
+	Weekly      usageBucketJSON `json:"weekly"`
+	PeriodNote  string          `json:"periodNote"`
 }
 
 type usageBucketJSON struct {
@@ -454,7 +496,7 @@ func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		items := make([]chatListItemResponse, 0, len(sessions))
 		for _, s := range sessions {
-			lastPreview, updatedAt := h.uc.GetSessionSummary(r.Context(), s.ID.String())
+			lastPreview, updatedAt := h.uc.GetSessionSummary(r.Context(), s.ID.String(), s.CreatedAt)
 			lp, lm := sessionLLMSummary(s)
 			items = append(items, chatListItemResponse{
 				ID:                 s.ID.String(),
@@ -519,9 +561,33 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	chatID := session.ID.String()
+	if strings.TrimSpace(req.Content) != "" {
+		assistant, usage, sendErr := h.uc.SendMessage(r.Context(), user.UserID, chatID, req.Provider, req.Model, req.Content, nil)
+		if sendErr != nil {
+			writeAppError(w, sendErr)
+			return
+		}
+		h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
+		am := chatMessage{
+			Role:     string(assistant.Role),
+			Content:  assistant.Content,
+			Provider: assistant.Provider,
+			Model:    assistant.Model,
+		}
+		writeJSON(w, http.StatusCreated, createSessionResponse{
+			ID:               chatID,
+			Provider:         session.DefaultProvider,
+			Model:            session.DefaultModel,
+			AssistantMessage: &am,
+			Usage:            usage,
+		})
+		return
+	}
+
 	h.invalidateChatList(r.Context(), user.UserID)
 	writeJSON(w, http.StatusCreated, createSessionResponse{
-		ID:       session.ID.String(),
+		ID:       chatID,
 		Provider: session.DefaultProvider,
 		Model:    session.DefaultModel,
 	})
@@ -926,6 +992,8 @@ func writeAppError(w http.ResponseWriter, err error) {
 		httpx.NotFound(w, err.Error())
 	case errors.Is(err, domain.ErrMessageNotFound):
 		httpx.NotFound(w, err.Error())
+	case errors.Is(err, domain.ErrModelDiscontinued):
+		httpx.BadRequest(w, err.Error())
 	case errors.Is(err, domain.ErrUnsupportedProvider):
 		httpx.BadRequest(w, err.Error())
 	case errors.Is(err, domain.ErrProviderAuthFailed):

@@ -5,7 +5,7 @@ import (
 )
 
 func TestBuiltinTemplatesExist(t *testing.T) {
-	expected := []string{"openai", "gemini", "anthropic"}
+	expected := []string{"openai", "gemini", "anthropic", "claude"}
 	for _, name := range expected {
 		if _, ok := BuiltinTemplates[name]; !ok {
 			t.Errorf("expected built-in template %q to exist", name)
@@ -40,8 +40,8 @@ func TestIsKnownTemplate(t *testing.T) {
 	if !IsKnownTemplate("gemini") {
 		t.Error("expected gemini to be known")
 	}
-	if IsKnownTemplate("claude") {
-		t.Error("expected claude not to be known (it's 'anthropic')")
+	if !IsKnownTemplate("claude") {
+		t.Error("expected claude template alias to be known")
 	}
 }
 

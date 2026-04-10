@@ -1,14 +1,15 @@
 package chat
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
-	"context"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/messivite/go-thy-case-study-backend/internal/catalog"
 	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
 	"github.com/messivite/go-thy-case-study-backend/internal/observability"
 	"github.com/messivite/go-thy-case-study-backend/internal/provider"
@@ -42,10 +43,11 @@ type UseCase struct {
 	repo      domain.Repository
 	quotaRepo domain.QuotaRepository
 	registry  *provider.Registry
+	models    domain.SupportedModelsCatalog
 }
 
-func NewUseCase(repo domain.Repository, quotaRepo domain.QuotaRepository, registry *provider.Registry) *UseCase {
-	return &UseCase{repo: repo, quotaRepo: quotaRepo, registry: registry}
+func NewUseCase(repo domain.Repository, quotaRepo domain.QuotaRepository, registry *provider.Registry, models domain.SupportedModelsCatalog) *UseCase {
+	return &UseCase{repo: repo, quotaRepo: quotaRepo, registry: registry, models: models}
 }
 
 func (uc *UseCase) GetUserProfile(ctx context.Context, userID string) (domain.UserProfile, error) {
@@ -62,6 +64,10 @@ func (uc *UseCase) CreateSession(ctx context.Context, userID, title, provider, m
 		if meta, ok := uc.registry.Meta(dp); ok {
 			dm = strings.TrimSpace(meta.DefaultModel)
 		}
+	}
+	eff := effectiveLLMModel(uc.registry, dp, model, "")
+	if err := uc.ensureModelActive(ctx, dp, eff); err != nil {
+		return domain.ChatSession{}, err
 	}
 	return uc.repo.CreateChatSession(ctx, userID, title, dp, dm)
 }
@@ -118,12 +124,23 @@ func (uc *UseCase) DeleteOwnMessage(ctx context.Context, userID, chatID, message
 	return uc.repo.SoftDeleteUserMessage(ctx, chatID, messageID, userID)
 }
 
-func (uc *UseCase) GetSessionSummary(ctx context.Context, chatID string) (lastMessagePreview string, updatedAt time.Time) {
+func (uc *UseCase) GetSessionSummary(ctx context.Context, chatID string, sessionCreatedAt time.Time) (lastMessagePreview string, updatedAt time.Time) {
 	msgs, err := uc.repo.GetMessagesBySession(ctx, chatID)
 	if err != nil || len(msgs) == 0 {
-		return "", time.Now().UTC()
+		return "", sessionCreatedAt
 	}
-	last := msgs[len(msgs)-1]
+	var last *domain.ChatMessage
+	for i := range msgs {
+		m := &msgs[i]
+		if last == nil ||
+			m.CreatedAt.After(last.CreatedAt) ||
+			(m.CreatedAt.Equal(last.CreatedAt) && m.ID.String() > last.ID.String()) {
+			last = m
+		}
+	}
+	if last == nil {
+		return "", sessionCreatedAt
+	}
 	preview := strings.TrimSpace(last.Content)
 	if len(preview) > 80 {
 		preview = preview[:80]
@@ -158,11 +175,11 @@ func (uc *UseCase) checkQuota(ctx context.Context, userID string) error {
 // MeUsage loads quota limits and token usage in parallel (two independent store calls).
 func (uc *UseCase) MeUsage(ctx context.Context, userID string) (domain.MeUsage, error) {
 	var (
-		q      domain.UserQuota
-		u      domain.UserTokenUsage
-		errQ   error
-		errU   error
-		wg     sync.WaitGroup
+		q    domain.UserQuota
+		u    domain.UserTokenUsage
+		errQ error
+		errU error
+		wg   sync.WaitGroup
 	)
 	wg.Add(2)
 	go func() {
@@ -500,6 +517,9 @@ func (uc *UseCase) SendMessage(
 	}
 	resolvedProvider := p.Name()
 	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, "")
+	if err := uc.ensureModelActive(ctx, resolvedProvider, effModel); err != nil {
+		return domain.ChatMessage{}, nil, err
+	}
 
 	// Save user message first so trigger creates pending audit row.
 	userMsg, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, content, resolvedProvider, effModel)
@@ -578,6 +598,9 @@ func (uc *UseCase) SyncMessages(
 	}
 	resolvedProvider := p.Name()
 	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, "")
+	if err := uc.ensureModelActive(ctx, resolvedProvider, effModel); err != nil {
+		return SyncResult{}, err
+	}
 
 	prepared := make([]domain.BatchMessage, 0, len(pending))
 	for _, msg := range pending {
@@ -683,6 +706,9 @@ func (uc *UseCase) StreamMessage(
 	}
 	resolvedProvider := p.Name()
 	effModel := effectiveLLMModel(uc.registry, resolvedProvider, model, "")
+	if err := uc.ensureModelActive(ctx, resolvedProvider, effModel); err != nil {
+		return nil, nil, nil, nil, err
+	}
 
 	// Save user message before stream so trigger creates pending audit row.
 	userMsg, err := uc.repo.SaveMessage(ctx, chatID, userID, domain.RoleUser, prompt, resolvedProvider, effModel)
@@ -786,6 +812,31 @@ func (uc *UseCase) ListProviders() []provider.ProviderMeta {
 	return uc.registry.List()
 }
 
+func (uc *UseCase) ListSupportedModels(ctx context.Context) ([]domain.SupportedModel, error) {
+	if uc.models == nil {
+		return catalog.SupportedModelsFromRegistry(uc.registry), nil
+	}
+	return uc.models.ListActiveSupportedModels(ctx)
+}
+
 func (uc *UseCase) DefaultProvider() string {
 	return uc.registry.Default()
+}
+
+func (uc *UseCase) ensureModelActive(ctx context.Context, resolvedProvider, effModel string) error {
+	if uc.models == nil {
+		return nil
+	}
+	em := strings.TrimSpace(effModel)
+	if em == "" {
+		return nil
+	}
+	ok, err := uc.models.IsModelActive(ctx, resolvedProvider, em)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return domain.ErrModelDiscontinued
+	}
+	return nil
 }

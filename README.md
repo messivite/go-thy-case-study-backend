@@ -32,10 +32,10 @@
 
 | Ad | Açıklama | Link |
 |---|---|---|
-| PROD Base URL | Canlı ortam ana adresi (apisiz) | [http://go-thy-case-study-backend-production.up.railway.app/](http://go-thy-case-study-backend-production.up.railway.app/) |
+| PROD Base URL | Canlı ortam kök adresi (`/api` öneki yok) | [http://go-thy-case-study-backend-production.up.railway.app/](http://go-thy-case-study-backend-production.up.railway.app/) |
 | PROD API URL | Canlı ortam API adresi (`/api`) | [http://go-thy-case-study-backend-production.up.railway.app/api](http://go-thy-case-study-backend-production.up.railway.app/api) |
 | PROD Swagger UI | Canlı ortamda API dokümantasyonu ve endpoint deneme ekranı | [http://go-thy-case-study-backend-production.up.railway.app/docs-thy-case-study-backend](http://go-thy-case-study-backend-production.up.railway.app/docs-thy-case-study-backend) |
-| DEV Base URL | Lokal geliştirme ortamı ana adresi (apisiz) | [http://localhost:8082/](http://localhost:8082/) |
+| DEV Base URL | Lokal geliştirme kök adresi (`/api` öneki yok) | [http://localhost:8082/](http://localhost:8082/) |
 | DEV API URL | Lokal geliştirme API adresi (`/api`) | [http://localhost:8082/api](http://localhost:8082/api) |
 | DEV Swagger UI | Lokal ortamda API dokümantasyonu ve endpoint test ekranı | [http://localhost:8082/docs-thy-case-study-backend](http://localhost:8082/docs-thy-case-study-backend) |
 
@@ -62,30 +62,37 @@ Bu proje, tarafımdan geliştirilen `gosupabase` kütüphanesi üzerine kuruludu
 - **LLM:** `providers.yaml` + environment variable anahtarları
 - **Kota ve audit:** Supabase tabloları + trigger + RPC
 
-## Proje Yapısı
+## Proje yapısı
 
 ```text
 cmd/
-  api/main.go              -> API sunucu giriş noktasi
-  server/main.go           -> gosupabase dev uyumlu giriş noktasi
-  thy-case-llm/main.go     -> LLM provider ve deploy yönetim CLI'i
+  api/main.go              -> Üretim tipi API sunucusunun giriş noktası
+  server/main.go           -> Yerel geliştirme (gosupabase dev) giriş noktası
+  thy-case-llm/main.go     -> LLM sağlayıcı ve dağıtım şablonları için CLI aracı
 internal/
-  application/chat/        -> Use-case katmanı
-  auth/                    -> JWT middleware ve context yardimcilari
-  chat/                    -> HTTP handler katmanı
-  config/                  -> Provider konfigürasyonu ve şablonlar
-  deploy/                  -> deploy list/show/init şablonları
-  domain/chat/             -> Domain modelleri, interface'ler, hatalar
-  provider/                -> OpenAI/Gemini adapter'lari ve registry
-  repo/                    -> Supabase ve memory repository implementasyonları
-providers.yaml             -> LLM provider konfigürasyonu (non-secret)
-api.yaml                   -> Endpoint tanımları ve rol kuralları
-supabase/                  -> Migration, function ve Supabase config dosyalari
+  application/chat/        -> Use case katmanı
+  app/                     -> HTTP yönlendirme, Swagger UI, landing
+  auth/                    -> JWT doğrulama ve istek bağlamındaki kullanıcı bilgisi
+  cache/                   -> HTTP yanıt önbelleği (bellek veya Redis)
+  chat/                    -> Sohbet ve ilgili HTTP handler’lar
+  config/                  -> Sağlayıcı yapılandırması ve şablonlar
+  deploy/                  -> Dağıtım hedefleri (list / show / init) ve şablonlar
+  domain/chat/             -> Domain modelleri, repository arayüzleri, hatalar
+  dotenv/                  -> Yerel .env yükleme yardımcıları
+  httpx/                   -> HTTP hata yanıtları
+  observability/           -> Yapılandırılmış log ve OpenTelemetry izleme
+  provider/                -> OpenAI / Gemini sağlayıcıları ve kayıt defteri (registry)
+  repo/                    -> Supabase ve bellek içi repository uygulamaları
+  swagger/                 -> OpenAPI belgelerinin sunumu
+  landing/                 -> Kök path karşılama sayfası
+providers.yaml             -> LLM sağlayıcı tanımları (gizli olmayan ayarlar)
+api.yaml                   -> Uç nokta tanımları ve rol kuralları
+supabase/                  -> Veritabanı migration’ları, edge function’lar ve Supabase yapılandırması
 ```
 
-## Provider Konfigurasyonu
+## Provider konfigürasyonu
 
-Provider metadata ve gizli anahtarlar ayrıdır:
+Sağlayıcı meta verileri (isim, model, env anahtarı referansı) ile gizli anahtarlar ayrı tutulur:
 
 | Dosya | İçerik | Git'e eklenir? |
 |---|---|---|
@@ -168,6 +175,11 @@ thy-case-llm provider add
 
 # Hazır şablonla ekle (ör. OpenAI)
 thy-case-llm provider add --template openai --set-default
+
+# Claude (Anthropic API — ANTHROPIC_API_KEY; providers.yaml'da name: claude)
+thy-case-llm provider add --template claude --set-default
+# veya kayıt adı anthropic olsun istersen:
+thy-case-llm provider add --template anthropic --set-default
 
 # Yeni provider ekle (flag ile)
 thy-case-llm provider add --name openai --model gpt-4o --env-key OPENAI_API_KEY
@@ -400,7 +412,7 @@ Eğer `api.yaml` değişmiş ama üretilen dosyalar commit edilmemişse pipeline
 | `GET` | `/api/me/usage` | Evet | Günlük/haftalık token kullanım-kota özeti |
 | `GET` | `/api/chats/search?q=...&limit=...&cursor=...` | Evet | Kullanıcıya ait sohbetlerde title + user/assistant mesaj araması (cursor pagination) |
 | `GET` | `/api/providers` | Evet | Aktif provider listesi ve default bilgi |
-| `POST` | `/api/chats` | Evet | Yeni sohbet oluşturur |
+| `POST` | `/api/chats` | Evet | Yeni sohbet; isteğe bağlı `content` ile ilk mesajı aynı istekte gönderip `assistantMessage` alabilirsin |
 | `GET` | `/api/chats` | Evet | Sohbet listesi (opsiyonel `limit` + `cursor` ile infinite-scroll pagination) |
 | `GET` | `/api/chats/{chatID}` | Evet | Sohbet ve mesaj detaylarını döner |
 | `DELETE` | `/api/chats/{chatID}` | Evet | Sohbeti soft-delete eder (`deleted_at` set edilir) |
@@ -546,12 +558,12 @@ thy-case-llm deploy init docker
 
 Desteklenen hedefler:
 
-| id | Uretilen dosyalar | Not |
+| id | Üretilen dosyalar | Not |
 |---|---|---|
 | `railway` | `Dockerfile`, `railway.toml` | Varsayılan health path `/health` |
 | `fly` | `Dockerfile`, `fly.toml` | Benzer Docker tabanlı kurulum |
 | `docker` | `Dockerfile`, `docker-compose.yml`, `.dockerignore` | Yerel Docker/Compose çalıştırma ve registry image hazırlığı |
-| `vercel` | `vercel.json`, `deploy/VERCEL.md` | Rewrite temelli yonlendirme senaryosu |
+| `vercel` | `vercel.json`, `deploy/VERCEL.md` | Rewrite tabanlı yönlendirme senaryosu |
 
 Yaygin flag'ler: `--dry-run`, `--force`, `--out`, `--port`, `--main-package`, `--health-path`, `--api-base-url`, `--module`.
 
