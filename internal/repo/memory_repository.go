@@ -80,12 +80,15 @@ func (r *MemoryRepository) GetChatSessionsByUserPage(ctx context.Context, userID
 		msgs := r.messages[s.ID]
 		lastPreview := ""
 		updatedAt := s.CreatedAt
-		if len(msgs) > 0 {
-			last := msgs[len(msgs)-1]
-			updatedAt = last.CreatedAt
-			lastPreview = last.Content
-			if len(lastPreview) > 80 {
-				lastPreview = lastPreview[:80]
+		for i := len(msgs) - 1; i >= 0; i-- {
+			if msgs[i].DeletedAt == nil {
+				last := msgs[i]
+				updatedAt = last.CreatedAt
+				lastPreview = last.Content
+				if len(lastPreview) > 80 {
+					lastPreview = lastPreview[:80]
+				}
+				break
 			}
 		}
 		sortAt := updatedAt
@@ -253,6 +256,36 @@ func (r *MemoryRepository) SaveMessages(ctx context.Context, sessionID, userID s
 	return saved, nil
 }
 
+func (r *MemoryRepository) SoftDeleteUserMessage(ctx context.Context, sessionID, messageID, userID string) error {
+	sessionUUID, err := uuid.Parse(sessionID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	messageUUID, err := uuid.Parse(messageID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidMessageID, err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.sessions[sessionUUID]; !ok || r.sessions[sessionUUID].DeletedAt != nil {
+		return domain.ErrSessionNotFound
+	}
+	msgs := r.messages[sessionUUID]
+	for i := range msgs {
+		if msgs[i].ID == messageUUID &&
+			msgs[i].Role == domain.RoleUser &&
+			msgs[i].UserID == userID &&
+			msgs[i].DeletedAt == nil {
+			now := time.Now().UTC()
+			msgs[i].DeletedAt = &now
+			r.messages[sessionUUID] = msgs
+			return nil
+		}
+	}
+	return domain.ErrMessageNotFound
+}
+
 func (r *MemoryRepository) GetMessagesBySession(ctx context.Context, sessionID string) ([]domain.ChatMessage, error) {
 	sessionUUID, err := uuid.Parse(sessionID)
 	if err != nil {
@@ -270,8 +303,12 @@ func (r *MemoryRepository) GetMessagesBySession(ctx context.Context, sessionID s
 	}
 
 	msgs := r.messages[sessionUUID]
-	out := make([]domain.ChatMessage, len(msgs))
-	copy(out, msgs)
+	out := make([]domain.ChatMessage, 0, len(msgs))
+	for _, m := range msgs {
+		if m.DeletedAt == nil {
+			out = append(out, m)
+		}
+	}
 	return out, nil
 }
 
@@ -340,6 +377,9 @@ func (r *MemoryRepository) SearchChats(ctx context.Context, params domain.Search
 		)
 		for i := range r.messages[s.ID] {
 			m := r.messages[s.ID][i]
+			if m.DeletedAt != nil {
+				continue
+			}
 			if m.CreatedAt.After(lastMessage) {
 				lastMessage = m.CreatedAt
 			}

@@ -421,6 +421,21 @@ func (h *Handler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.AuthenticatedUserFromContext(r.Context())
+	if !ok {
+		httpx.Unauthorized(w)
+		return
+	}
+	chatID := chi.URLParam(r, "chatID")
+	messageID := chi.URLParam(r, "messageID")
+	if err := h.uc.DeleteOwnMessage(r.Context(), user.UserID, chatID, messageID); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.AuthenticatedUserFromContext(r.Context())
 	if !ok {
@@ -773,9 +788,11 @@ func writeAppError(w http.ResponseWriter, err error) {
 		httpx.Forbidden(w)
 	case errors.Is(err, domain.ErrMissingContent), errors.Is(err, domain.ErrInvalidRole):
 		httpx.BadRequest(w, err.Error())
-	case errors.Is(err, domain.ErrInvalidSessionID), errors.Is(err, domain.ErrInvalidSearchCursor), errors.Is(err, domain.ErrSearchQueryTooShort), errors.Is(err, domain.ErrInvalidDirection):
+	case errors.Is(err, domain.ErrInvalidSessionID), errors.Is(err, domain.ErrInvalidMessageID), errors.Is(err, domain.ErrInvalidSearchCursor), errors.Is(err, domain.ErrSearchQueryTooShort), errors.Is(err, domain.ErrInvalidDirection):
 		httpx.BadRequest(w, err.Error())
 	case errors.Is(err, domain.ErrSessionNotFound):
+		httpx.NotFound(w, err.Error())
+	case errors.Is(err, domain.ErrMessageNotFound):
 		httpx.NotFound(w, err.Error())
 	case errors.Is(err, domain.ErrUnsupportedProvider):
 		httpx.BadRequest(w, err.Error())

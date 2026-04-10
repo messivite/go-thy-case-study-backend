@@ -543,6 +543,28 @@
         ]
       }
     },
+    "/chats/{chatID}/messages/{messageID}": {
+      "delete": {
+        "operationId": "deleteMessage",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/chatID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "DeleteMessage",
+        "tags": [
+          "misc"
+        ]
+      }
+    },
     "/chats/{chatID}/stream": {
       "post": {
         "operationId": "streamMessage",

@@ -12,6 +12,8 @@
 # GET /api/chats/{chatID}/messages
 #   query: limit, cursor, direction=older|newer
 #   200:   { "totalCount","hasNext","nextCursor","direction","items":[message...] }
+# DELETE /api/chats/{chatID}/messages/{messageID}
+#   204:   kullanıcı sadece kendi user mesajını soft-delete edebilir
 # POST /api/chats/{chatID}/messages
 #   body:  { "provider"?, "model"?, "content"?, "messages"? }
 #   201:   { "assistantMessage": { "role", "content", "provider", "model" }, "usage"?: object }
@@ -64,6 +66,10 @@ endpoints:
   - method: GET
     path: /chats/{chatID}/messages
     handler: ListMessages
+    auth: true
+  - method: DELETE
+    path: /chats/{chatID}/messages/{messageID}
+    handler: DeleteMessage
     auth: true
   - method: POST
     path: /chats/{chatID}/messages

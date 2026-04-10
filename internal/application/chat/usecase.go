@@ -103,6 +103,17 @@ func (uc *UseCase) DeleteSession(ctx context.Context, userID, chatID string) err
 	return uc.repo.SoftDeleteChatSession(ctx, chatID)
 }
 
+func (uc *UseCase) DeleteOwnMessage(ctx context.Context, userID, chatID, messageID string) error {
+	session, err := uc.repo.GetChatSessionByID(ctx, chatID)
+	if err != nil {
+		return err
+	}
+	if session.UserID != userID {
+		return domain.ErrUnauthorized
+	}
+	return uc.repo.SoftDeleteUserMessage(ctx, chatID, messageID, userID)
+}
+
 func (uc *UseCase) GetSessionSummary(ctx context.Context, chatID string) (lastMessagePreview string, updatedAt time.Time) {
 	msgs, err := uc.repo.GetMessagesBySession(ctx, chatID)
 	if err != nil || len(msgs) == 0 {

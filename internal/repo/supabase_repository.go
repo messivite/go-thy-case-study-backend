@@ -215,12 +215,32 @@ func (r *SupabaseRepository) SaveMessages(ctx context.Context, sessionID, userID
 	return saved, nil
 }
 
+func (r *SupabaseRepository) SoftDeleteUserMessage(ctx context.Context, sessionID, messageID, userID string) error {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	if _, err := uuid.Parse(messageID); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidMessageID, err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	body := map[string]any{"deleted_at": now}
+	path := fmt.Sprintf("/chat_messages?id=eq.%s&session_id=eq.%s&user_id=eq.%s&role=eq.user&deleted_at=is.null", messageID, sessionID, userID)
+	var rows []chatMessageRow
+	if err := r.doRequest(ctx, http.MethodPatch, path, body, &rows); err != nil {
+		return fmt.Errorf("soft delete message: %w", err)
+	}
+	if len(rows) == 0 {
+		return domain.ErrMessageNotFound
+	}
+	return nil
+}
+
 func (r *SupabaseRepository) GetMessagesBySession(ctx context.Context, sessionID string) ([]domain.ChatMessage, error) {
 	if _, err := uuid.Parse(sessionID); err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
 	}
 
-	path := fmt.Sprintf("/chat_messages?session_id=eq.%s&order=created_at.asc", sessionID)
+	path := fmt.Sprintf("/chat_messages?session_id=eq.%s&deleted_at=is.null&order=created_at.asc", sessionID)
 
 	var rows []chatMessageRow
 	if err := r.doRequest(ctx, http.MethodGet, path, nil, &rows); err != nil {
@@ -394,6 +414,7 @@ type chatMessageRow struct {
 	Role      string  `json:"role"`
 	Content   string  `json:"content"`
 	CreatedAt string  `json:"created_at"`
+	DeletedAt *string `json:"deleted_at"`
 	Provider  *string `json:"provider"`
 	Model     *string `json:"model"`
 }
@@ -534,6 +555,12 @@ func (r chatMessageRow) toDomain() domain.ChatMessage {
 		Role:      domain.Role(r.Role),
 		Content:   r.Content,
 		CreatedAt: createdAt,
+	}
+	if r.DeletedAt != nil {
+		t, err := time.Parse(time.RFC3339Nano, *r.DeletedAt)
+		if err == nil {
+			m.DeletedAt = &t
+		}
 	}
 	if r.Provider != nil {
 		m.Provider = *r.Provider

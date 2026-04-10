@@ -41,6 +41,7 @@ type ChatMessage struct {
 	Role      Role
 	Content   string
 	CreatedAt time.Time
+	DeletedAt *time.Time
 	Provider  string
 	Model     string
 }

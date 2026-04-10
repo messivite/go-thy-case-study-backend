@@ -17,6 +17,7 @@ type Repository interface {
 	UpdateSessionLastLLM(ctx context.Context, sessionID, provider, model string) error
 	SaveMessage(ctx context.Context, sessionID, userID string, role Role, content, provider, model string) (ChatMessage, error)
 	SaveMessages(ctx context.Context, sessionID, userID string, messages []BatchMessage) ([]ChatMessage, error)
+	SoftDeleteUserMessage(ctx context.Context, sessionID, messageID, userID string) error
 	GetMessagesBySession(ctx context.Context, sessionID string) ([]ChatMessage, error)
 	GetMessagesBySessionPage(ctx context.Context, sessionID string, limit int, direction string, cursor *MessageCursor) ([]ChatMessage, int, error)
 	SearchChats(ctx context.Context, params SearchChatParams) (SearchChatsResult, error)
