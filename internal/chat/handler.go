@@ -1004,6 +1004,8 @@ func writeAppError(w http.ResponseWriter, err error) {
 		httpx.QuotaWeeklyExceeded(w)
 	case errors.Is(err, domain.ErrUserCancelled):
 		httpx.GenerationCancelled(w)
+	case errors.Is(err, domain.ErrInvalidImagePayload), errors.Is(err, domain.ErrAvatarTooLarge), errors.Is(err, domain.ErrProfilePatchEmpty):
+		httpx.BadRequest(w, err.Error())
 	default:
 		httpx.Internal(w)
 	}

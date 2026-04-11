@@ -21,12 +21,14 @@ type MemoryRepository struct {
 	sessions        map[uuid.UUID]domain.ChatSession
 	messages        map[uuid.UUID][]domain.ChatMessage
 	supportedModels []domain.SupportedModel
+	profiles        map[string]domain.UserProfile // user id string -> patched profile
 }
 
 func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{
 		sessions: make(map[uuid.UUID]domain.ChatSession),
 		messages: make(map[uuid.UUID][]domain.ChatMessage),
+		profiles: make(map[string]domain.UserProfile),
 	}
 }
 
@@ -82,14 +84,22 @@ func (r *MemoryRepository) GetChatSessionsByUserPage(ctx context.Context, userID
 		msgs := r.messages[s.ID]
 		lastPreview := ""
 		updatedAt := s.CreatedAt
+		foundActivity := false
 		for i := len(msgs) - 1; i >= 0; i-- {
-			if msgs[i].DeletedAt == nil {
-				last := msgs[i]
-				updatedAt = last.CreatedAt
-				lastPreview = last.Content
-				if len(lastPreview) > 80 {
-					lastPreview = lastPreview[:80]
+			if msgs[i].DeletedAt != nil {
+				continue
+			}
+			m := msgs[i]
+			if !foundActivity {
+				updatedAt = m.CreatedAt
+				foundActivity = true
+			}
+			if lastPreview == "" && strings.TrimSpace(m.Content) != "" {
+				t := strings.TrimSpace(m.Content)
+				if len(t) > 80 {
+					t = t[:80]
 				}
+				lastPreview = t
 				break
 			}
 		}
@@ -567,7 +577,64 @@ func (r *MemoryRepository) SearchChats(ctx context.Context, params domain.Search
 
 func (r *MemoryRepository) GetUserProfile(ctx context.Context, userID string) (domain.UserProfile, error) {
 	_ = ctx
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if p, ok := r.profiles[userID]; ok {
+		return p, nil
+	}
 	return domain.UserProfile{ID: userID, Locale: "tr", IsActive: true}, nil
+}
+
+func applyProfilePatchMemory(base domain.UserProfile, patch domain.ProfilePatch) domain.UserProfile {
+	out := base
+	if patch.DisplayName != nil {
+		out.DisplayName = *patch.DisplayName
+	}
+	if patch.PreferredProvider != nil {
+		out.PreferredProvider = *patch.PreferredProvider
+	}
+	if patch.PreferredModel != nil {
+		out.PreferredModel = *patch.PreferredModel
+	}
+	if patch.Locale != nil {
+		loc := strings.TrimSpace(*patch.Locale)
+		if loc == "" {
+			out.Locale = "tr"
+		} else {
+			out.Locale = loc
+		}
+	}
+	if patch.Timezone != nil {
+		out.Timezone = *patch.Timezone
+	}
+	if patch.AvatarURL != nil {
+		out.AvatarURL = *patch.AvatarURL
+	}
+	if patch.OnboardingCompleted != nil {
+		out.OnboardingCompleted = *patch.OnboardingCompleted
+	}
+	return out
+}
+
+func (r *MemoryRepository) PatchUserProfile(ctx context.Context, userID string, patch domain.ProfilePatch) (domain.UserProfile, error) {
+	_ = ctx
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	base, ok := r.profiles[userID]
+	if !ok {
+		base = domain.UserProfile{ID: userID, Locale: "tr", IsActive: true}
+	}
+	updated := applyProfilePatchMemory(base, patch)
+	r.profiles[userID] = updated
+	return updated, nil
+}
+
+func (r *MemoryRepository) UploadUserAvatarJPEG(ctx context.Context, userID string, jpeg []byte) (string, error) {
+	_ = ctx
+	if len(jpeg) == 0 {
+		return "", domain.ErrInvalidImagePayload
+	}
+	return "https://memory.local/storage/v1/object/public/avatars/" + userID + ".jpg", nil
 }
 
 func (r *MemoryRepository) SyncSupportedModels(ctx context.Context, rows []domain.SupportedModel) error {

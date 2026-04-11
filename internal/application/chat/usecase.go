@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
 	"github.com/messivite/go-thy-case-study-backend/internal/observability"
 	"github.com/messivite/go-thy-case-study-backend/internal/provider"
+	"github.com/messivite/go-thy-case-study-backend/internal/repo"
 )
 
 type StreamFinalize func(assistantContent string) (domain.ChatMessage, error)
@@ -55,6 +57,35 @@ func NewUseCase(repo domain.Repository, quotaRepo domain.QuotaRepository, regist
 
 func (uc *UseCase) GetUserProfile(ctx context.Context, userID string) (domain.UserProfile, error) {
 	return uc.repo.GetUserProfile(ctx, userID)
+}
+
+const maxAvatarUploadBytes = 25 << 20 // raw bytes before resize (guardrail)
+
+func profilePatchIsEmpty(p domain.ProfilePatch) bool {
+	return p.DisplayName == nil && p.PreferredProvider == nil && p.PreferredModel == nil &&
+		p.Locale == nil && p.Timezone == nil && p.AvatarURL == nil && p.OnboardingCompleted == nil
+}
+
+// PatchMe applies partial profile updates; rawAvatar (if non-empty) is resized to 300×300 JPEG, uploaded, and avatar_url is set.
+func (uc *UseCase) PatchMe(ctx context.Context, userID string, patch domain.ProfilePatch, rawAvatar []byte) (domain.UserProfile, error) {
+	if len(rawAvatar) > maxAvatarUploadBytes {
+		return domain.UserProfile{}, domain.ErrAvatarTooLarge
+	}
+	if len(rawAvatar) > 0 {
+		jpeg, err := repo.ResizeToAvatarJPEG(rawAvatar)
+		if err != nil {
+			return domain.UserProfile{}, fmt.Errorf("%w: %v", domain.ErrInvalidImagePayload, err)
+		}
+		url, err := uc.repo.UploadUserAvatarJPEG(ctx, userID, jpeg)
+		if err != nil {
+			return domain.UserProfile{}, err
+		}
+		patch.AvatarURL = &url
+	}
+	if profilePatchIsEmpty(patch) {
+		return domain.UserProfile{}, domain.ErrProfilePatchEmpty
+	}
+	return uc.repo.PatchUserProfile(ctx, userID, patch)
 }
 
 func (uc *UseCase) CreateSession(ctx context.Context, userID, title, provider, model string) (domain.ChatSession, error) {
@@ -132,23 +163,39 @@ func (uc *UseCase) GetSessionSummary(ctx context.Context, chatID string, session
 	if err != nil || len(msgs) == 0 {
 		return "", sessionCreatedAt
 	}
-	var last *domain.ChatMessage
+	// Newest non-deleted message drives updatedAt; preview skips empty content (e.g. streaming placeholder before cancel).
+	var lastActivity *domain.ChatMessage
+	var lastNonEmpty *domain.ChatMessage
 	for i := range msgs {
 		m := &msgs[i]
-		if last == nil ||
-			m.CreatedAt.After(last.CreatedAt) ||
-			(m.CreatedAt.Equal(last.CreatedAt) && m.ID.String() > last.ID.String()) {
-			last = m
+		if m.DeletedAt != nil {
+			continue
+		}
+		if lastActivity == nil ||
+			m.CreatedAt.After(lastActivity.CreatedAt) ||
+			(m.CreatedAt.Equal(lastActivity.CreatedAt) && m.ID.String() > lastActivity.ID.String()) {
+			lastActivity = m
+		}
+		if strings.TrimSpace(m.Content) != "" {
+			if lastNonEmpty == nil ||
+				m.CreatedAt.After(lastNonEmpty.CreatedAt) ||
+				(m.CreatedAt.Equal(lastNonEmpty.CreatedAt) && m.ID.String() > lastNonEmpty.ID.String()) {
+				lastNonEmpty = m
+			}
 		}
 	}
-	if last == nil {
+	if lastActivity == nil {
 		return "", sessionCreatedAt
 	}
-	preview := strings.TrimSpace(last.Content)
+	updatedAt = lastActivity.CreatedAt
+	if lastNonEmpty == nil {
+		return "", updatedAt
+	}
+	preview := strings.TrimSpace(lastNonEmpty.Content)
 	if len(preview) > 80 {
 		preview = preview[:80]
 	}
-	return preview, last.CreatedAt
+	return preview, updatedAt
 }
 
 // checkQuota returns nil if the user is allowed, or a quota error.
@@ -780,8 +827,10 @@ func (uc *UseCase) StreamMessage(
 	cancel := func(partialChars int) {
 		observability.LLMCancelled(resolvedProvider, effModel, userID, chatID, partialChars)
 		if partialChars == 0 {
+			// Stop / disconnect with nothing to save: roll back this turn (user + empty assistant), önceki mesajlar kalır.
 			cleanCtx, c := context.WithTimeout(context.Background(), 5*time.Second)
 			_ = uc.repo.SoftDeleteChatMessageByID(cleanCtx, chatID, assistantMsgID)
+			_ = uc.repo.SoftDeleteUserMessage(cleanCtx, chatID, userMsgID, userID)
 			c()
 		}
 		uc.auditCancel(userMsgID)

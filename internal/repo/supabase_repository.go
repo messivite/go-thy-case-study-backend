@@ -20,17 +20,22 @@ var _ domain.Repository = (*SupabaseRepository)(nil)
 var _ domain.SupportedModelsCatalog = (*SupabaseRepository)(nil)
 
 type SupabaseRepository struct {
-	baseURL        string
+	baseURL        string // .../rest/v1
+	projectBase    string // trimmed project URL (no trailing slash)
+	storageV1URL   string // projectBase + /storage/v1
 	serviceRoleKey string
 	client         *http.Client
 }
 
 func NewSupabaseRepository(supabaseURL, serviceRoleKey string) *SupabaseRepository {
+	base := strings.TrimRight(strings.TrimSpace(supabaseURL), "/")
 	return &SupabaseRepository{
-		baseURL:        supabaseURL + "/rest/v1",
+		baseURL:        base + "/rest/v1",
+		projectBase:    base,
+		storageV1URL:   base + "/storage/v1",
 		serviceRoleKey: serviceRoleKey,
 		client: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: 60 * time.Second,
 		},
 	}
 }
@@ -410,6 +415,121 @@ func (r *SupabaseRepository) GetUserProfile(ctx context.Context, userID string) 
 	return rows[0].toDomain()
 }
 
+func profilePatchToRESTBody(patch domain.ProfilePatch) map[string]any {
+	body := map[string]any{}
+	if patch.DisplayName != nil {
+		if strings.TrimSpace(*patch.DisplayName) == "" {
+			body["display_name"] = nil
+		} else {
+			body["display_name"] = strings.TrimSpace(*patch.DisplayName)
+		}
+	}
+	if patch.PreferredProvider != nil {
+		if strings.TrimSpace(*patch.PreferredProvider) == "" {
+			body["preferred_provider"] = nil
+		} else {
+			body["preferred_provider"] = strings.TrimSpace(*patch.PreferredProvider)
+		}
+	}
+	if patch.PreferredModel != nil {
+		if strings.TrimSpace(*patch.PreferredModel) == "" {
+			body["preferred_model"] = nil
+		} else {
+			body["preferred_model"] = strings.TrimSpace(*patch.PreferredModel)
+		}
+	}
+	if patch.Locale != nil {
+		loc := strings.TrimSpace(*patch.Locale)
+		if loc == "" {
+			body["locale"] = "tr"
+		} else {
+			body["locale"] = loc
+		}
+	}
+	if patch.Timezone != nil {
+		if strings.TrimSpace(*patch.Timezone) == "" {
+			body["timezone"] = nil
+		} else {
+			body["timezone"] = strings.TrimSpace(*patch.Timezone)
+		}
+	}
+	if patch.AvatarURL != nil {
+		if strings.TrimSpace(*patch.AvatarURL) == "" {
+			body["avatar_url"] = nil
+		} else {
+			body["avatar_url"] = strings.TrimSpace(*patch.AvatarURL)
+		}
+	}
+	if patch.OnboardingCompleted != nil {
+		body["onboarding_completed"] = *patch.OnboardingCompleted
+	}
+	return body
+}
+
+func (r *SupabaseRepository) PatchUserProfile(ctx context.Context, userID string, patch domain.ProfilePatch) (domain.UserProfile, error) {
+	if _, err := uuid.Parse(userID); err != nil {
+		return domain.UserProfile{}, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	body := profilePatchToRESTBody(patch)
+	if len(body) == 0 {
+		return r.GetUserProfile(ctx, userID)
+	}
+	path := "/profiles?id=eq." + userID
+	var rows []profileRow
+	if err := r.doRequest(ctx, http.MethodPatch, path, body, &rows); err != nil {
+		return domain.UserProfile{}, fmt.Errorf("patch profile: %w", err)
+	}
+	if len(rows) > 0 {
+		return rows[0].toDomain()
+	}
+	mergeBody := map[string]any{"id": userID}
+	for k, v := range body {
+		mergeBody[k] = v
+	}
+	var merged []profileRow
+	if err := r.doRequestPrefer(ctx, http.MethodPost, "/profiles", mergeBody, &merged, "return=representation,resolution=merge-duplicates"); err != nil {
+		return domain.UserProfile{}, fmt.Errorf("patch profile upsert: %w", err)
+	}
+	if len(merged) == 0 {
+		return r.GetUserProfile(ctx, userID)
+	}
+	return merged[0].toDomain()
+}
+
+func (r *SupabaseRepository) publicAvatarURL(userID string) string {
+	return r.projectBase + "/storage/v1/object/public/avatars/" + userID + ".jpg"
+}
+
+func (r *SupabaseRepository) UploadUserAvatarJPEG(ctx context.Context, userID string, jpeg []byte) (string, error) {
+	if _, err := uuid.Parse(userID); err != nil {
+		return "", fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	if len(jpeg) == 0 {
+		return "", domain.ErrInvalidImagePayload
+	}
+	objectPath := userID + ".jpg"
+	uploadURL := r.storageV1URL + "/object/avatars/" + url.PathEscape(objectPath)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, bytes.NewReader(jpeg))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+r.serviceRoleKey)
+	req.Header.Set("apikey", r.serviceRoleKey)
+	req.Header.Set("Content-Type", "image/jpeg")
+	req.Header.Set("x-upsert", "true")
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("storage upload: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("storage upload returned %d: %s", resp.StatusCode, string(respBody))
+	}
+	return r.publicAvatarURL(userID), nil
+}
+
 func (r *SupabaseRepository) SyncSupportedModels(ctx context.Context, rows []domain.SupportedModel) error {
 	payload := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
@@ -461,6 +581,10 @@ func (r *SupabaseRepository) IsModelActive(ctx context.Context, providerName, mo
 // ---------------------------------------------------------------------------
 
 func (r *SupabaseRepository) doRequest(ctx context.Context, method, path string, body any, result any) error {
+	return r.doRequestPrefer(ctx, method, path, body, result, "return=representation")
+}
+
+func (r *SupabaseRepository) doRequestPrefer(ctx context.Context, method, path string, body any, result any, prefer string) error {
 	var bodyReader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -478,7 +602,9 @@ func (r *SupabaseRepository) doRequest(ctx context.Context, method, path string,
 	req.Header.Set("apikey", r.serviceRoleKey)
 	req.Header.Set("Authorization", "Bearer "+r.serviceRoleKey)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Prefer", "return=representation")
+	if prefer != "" {
+		req.Header.Set("Prefer", prefer)
+	}
 
 	resp, err := r.client.Do(req)
 	if err != nil {

@@ -129,6 +129,43 @@ func operationFor(e Endpoint) string {
         "401":
           $ref: "#/components/responses/Unauthorized"
 `, m, sec)
+	case "PatchMe":
+		return fmt.Sprintf(`    %s:
+      tags: [auth]
+      summary: Profil güncelle (JSON veya multipart + avatar)
+      operationId: patchMe
+%s      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchMeRequest"
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                displayName: { type: string }
+                preferredProvider: { type: string }
+                preferredModel: { type: string }
+                locale: { type: string }
+                timezone: { type: string }
+                onboardingCompleted: { type: string, description: "true veya false" }
+                avatar:
+                  type: string
+                  format: binary
+                  description: 300x300 JPEG'e indirgenir; Supabase Storage avatars bucket
+      responses:
+        "200":
+          description: Güncel kimlik + profil (GET /me ile aynı şema)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+`, m, sec)
 	case "ListProviders":
 		return fmt.Sprintf(`    %s:
       tags: [providers]
@@ -393,6 +430,16 @@ paths:
         user: { $ref: "#/components/schemas/MeUser" }
         profile: { $ref: "#/components/schemas/MeProfile" }
       required: [user, profile]
+    PatchMeRequest:
+      type: object
+      description: Tüm alanlar opsiyonel; en az bir alan veya multipart istekte avatar dosyası gerekir.
+      properties:
+        displayName: { type: string }
+        preferredProvider: { type: string }
+        preferredModel: { type: string }
+        locale: { type: string }
+        timezone: { type: string }
+        onboardingCompleted: { type: boolean }
     ProviderInfo:
       type: object
       properties:

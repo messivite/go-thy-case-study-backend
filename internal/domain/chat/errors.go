@@ -27,4 +27,8 @@ var (
 
 	// ErrModelDiscontinued model katalogda yok veya pasifleştirilmiş (sync / operatör).
 	ErrModelDiscontinued = errors.New("bu model artık desteklenmiyor veya kullanıma kapatıldı")
+
+	ErrInvalidImagePayload = errors.New("geçersiz veya desteklenmeyen görsel")
+	ErrAvatarTooLarge      = errors.New("avatar dosyası çok büyük")
+	ErrProfilePatchEmpty   = errors.New("güncellenecek alan veya avatar yok")
 )
