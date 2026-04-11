@@ -757,6 +757,9 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 		"model":    usage["model"],
 		"usage":    usage,
 	}
+	if uid, ok := usage["userMessageId"].(string); ok && uid != "" {
+		meta["userMessageId"] = uid
+	}
 	_ = writeSSE(w, map[string]any{"type": "meta", "meta": meta})
 	flusher.Flush()
 
@@ -775,12 +778,16 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 				if ferr != nil {
 					_ = writeSSE(w, map[string]any{"type": "error", "message": ferr.Error()})
 				} else {
-					_ = writeSSE(w, map[string]any{"type": "meta", "meta": map[string]any{
+					partialMeta := map[string]any{
 						"assistantMessageId": msg.ID.String(),
 						"provider":           msg.Provider,
 						"model":              msg.Model,
 						"partial":            true,
-					}})
+					}
+					if uid, ok := usage["userMessageId"].(string); ok && uid != "" {
+						partialMeta["userMessageId"] = uid
+					}
+					_ = writeSSE(w, map[string]any{"type": "meta", "meta": partialMeta})
 					_ = writeSSE(w, map[string]any{"type": "cancelled"})
 				}
 				cancelStream(len(partialRaw))
@@ -794,11 +801,15 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 				if ferr != nil {
 					_ = writeSSE(w, map[string]any{"type": "error", "message": ferr.Error()})
 				} else {
-					_ = writeSSE(w, map[string]any{"type": "meta", "meta": map[string]any{
+					doneMeta := map[string]any{
 						"assistantMessageId": msg.ID.String(),
 						"provider":           msg.Provider,
 						"model":              msg.Model,
-					}})
+					}
+					if uid, ok := usage["userMessageId"].(string); ok && uid != "" {
+						doneMeta["userMessageId"] = uid
+					}
+					_ = writeSSE(w, map[string]any{"type": "meta", "meta": doneMeta})
 					_ = writeSSE(w, map[string]any{"type": "done"})
 				}
 				h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
