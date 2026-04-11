@@ -60,10 +60,12 @@ type postMessageRequest struct {
 }
 
 type chatMessage struct {
-	Role     string `json:"role"`
-	Content  string `json:"content"`
-	Provider string `json:"provider,omitempty"`
-	Model    string `json:"model,omitempty"`
+	ID        string `json:"id,omitempty"`
+	CreatedAt string `json:"createdAt,omitempty"`
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	Provider  string `json:"provider,omitempty"`
+	Model     string `json:"model,omitempty"`
 }
 
 type syncRequest struct {
@@ -569,12 +571,7 @@ func (h *Handler) CreateSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
-		am := chatMessage{
-			Role:     string(assistant.Role),
-			Content:  assistant.Content,
-			Provider: assistant.Provider,
-			Model:    assistant.Model,
-		}
+		am := chatMessageFromDomain(assistant)
 		writeJSON(w, http.StatusCreated, createSessionResponse{
 			ID:               chatID,
 			Provider:         session.DefaultProvider,
@@ -717,13 +714,8 @@ func (h *Handler) PostMessage(w http.ResponseWriter, r *http.Request) {
 
 	h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
 	writeJSON(w, http.StatusCreated, assistantResponse{
-		AssistantMessage: chatMessage{
-			Role:     string(assistantMsg.Role),
-			Content:  assistantMsg.Content,
-			Provider: assistantMsg.Provider,
-			Model:    assistantMsg.Model,
-		},
-		Usage: usage,
+		AssistantMessage: chatMessageFromDomain(assistantMsg),
+		Usage:            usage,
 	})
 }
 
@@ -929,15 +921,21 @@ func toDomainMessages(messages []chatMessage) []domain.ChatMessage {
 	return out
 }
 
+func chatMessageFromDomain(m domain.ChatMessage) chatMessage {
+	return chatMessage{
+		ID:        m.ID.String(),
+		CreatedAt: m.CreatedAt.UTC().Format(time.RFC3339Nano),
+		Role:      string(m.Role),
+		Content:   m.Content,
+		Provider:  m.Provider,
+		Model:     m.Model,
+	}
+}
+
 func toAPIMessages(messages []domain.ChatMessage) []chatMessage {
 	out := make([]chatMessage, 0, len(messages))
 	for _, m := range messages {
-		out = append(out, chatMessage{
-			Role:     string(m.Role),
-			Content:  m.Content,
-			Provider: m.Provider,
-			Model:    m.Model,
-		})
+		out = append(out, chatMessageFromDomain(m))
 	}
 	return out
 }
