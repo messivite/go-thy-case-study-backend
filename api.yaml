@@ -20,6 +20,8 @@
 #   201:   { "assistantMessage": { "id","createdAt","role","content","provider"?, "model"? }, "usage"?: object }
 # POST /api/chats/{chatID}/stream
 #   body:  aynı; cevap text/event-stream, data: JSON (meta | delta | done)
+#   İlk meta: userMessageId, provider, model (kullanıcı mesajı DB'ye yazıldıktan hemen sonra; assistantMessageId yoktur).
+#   done / iptal sonrası kısmi kayıt meta: userMessageId + assistantMessageId (+ partial vb.).
 # GET /api/me/usage — günlük/haftalık token kotası + kullanım (UTC; outcome=ok)
 # GET /api/models — seçilebilir LLM modelleri (Supabase’te aktif katalog; açılışta registry ile sync)
 version: "1"

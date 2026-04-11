@@ -770,7 +770,7 @@
                 }
               }
             },
-            "description": "Server-Sent Events stream"
+            "description": "Server-Sent Events: data satırları JSON taşır. İlk olay genelde type meta — meta.userMessageId\n(DB'ye yazılan kullanıcı mesajı), provider, model. done öncesi meta'da ayrıca assistantMessageId.\nDelta için type delta; bitiş için type done veya hata/iptal olayları.\n"
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"

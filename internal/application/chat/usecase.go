@@ -732,12 +732,12 @@ func (uc *UseCase) StreamMessage(
 		return nil, nil, nil, nil, err
 	}
 
-	usageMeta := map[string]any{
-		"provider": resolvedProvider,
-		"model":    effModel,
-	}
-
 	userMsgID := userMsg.ID.String()
+	usageMeta := map[string]any{
+		"provider":      resolvedProvider,
+		"model":         effModel,
+		"userMessageId": userMsgID,
+	}
 	finalize := func(assistantContent string) (domain.ChatMessage, error) {
 		observability.Info("llm.stream.complete", map[string]any{
 			"provider":   resolvedProvider,

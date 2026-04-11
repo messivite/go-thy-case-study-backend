@@ -260,7 +260,10 @@ func operationFor(e Endpoint) string {
               $ref: "#/components/schemas/PostMessageRequest"
       responses:
         "200":
-          description: Server-Sent Events stream
+          description: |
+            Server-Sent Events: data satırları JSON taşır. İlk olay genelde type meta — meta.userMessageId
+            (DB'ye yazılan kullanıcı mesajı), provider, model. done öncesi meta'da ayrıca assistantMessageId.
+            Delta için type delta; bitiş için type done veya hata/iptal olayları.
           content:
             text/event-stream:
               schema:
