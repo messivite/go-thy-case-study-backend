@@ -16,6 +16,9 @@ type Repository interface {
 	SoftDeleteChatSession(ctx context.Context, sessionID string) error
 	UpdateSessionLastLLM(ctx context.Context, sessionID, provider, model string) error
 	SaveMessage(ctx context.Context, sessionID, userID string, role Role, content, provider, model string) (ChatMessage, error)
+	SaveAssistantPlaceholder(ctx context.Context, sessionID, messageID, provider, model string) (ChatMessage, error)
+	UpdateAssistantMessageContent(ctx context.Context, sessionID, messageID, content, provider, model string) (ChatMessage, error)
+	SoftDeleteChatMessageByID(ctx context.Context, sessionID, messageID string) error
 	SaveMessages(ctx context.Context, sessionID, userID string, messages []BatchMessage) ([]ChatMessage, error)
 	SoftDeleteUserMessage(ctx context.Context, sessionID, messageID, userID string) error
 	GetMessagesBySession(ctx context.Context, sessionID string) ([]ChatMessage, error)

@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/messivite/go-thy-case-study-backend/internal/catalog"
 	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
@@ -715,28 +718,40 @@ func (uc *UseCase) StreamMessage(
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+	userMsgID := userMsg.ID.String()
+
+	history, err := uc.repo.GetMessagesBySession(ctx, chatID)
+	if err != nil {
+		uc.auditFail(ctx, userMsgID, err)
+		return nil, nil, nil, nil, err
+	}
+
+	assistantID := uuid.New()
+	if _, err := uc.repo.SaveAssistantPlaceholder(ctx, chatID, assistantID.String(), resolvedProvider, effModel); err != nil {
+		uc.auditFail(ctx, userMsgID, err)
+		return nil, nil, nil, nil, err
+	}
+	assistantMsgID := assistantID.String()
 
 	observability.LLMRequest(resolvedProvider, model, userID, chatID)
 
 	events, err := p.Stream(ctx, domain.ProviderRequest{
 		Provider: resolvedProvider,
 		Model:    model,
-		Messages: func() []domain.ChatMessage {
-			h, _ := uc.repo.GetMessagesBySession(ctx, chatID)
-			return h
-		}(),
+		Messages: history,
 	})
 	if err != nil {
 		observability.LLMError(resolvedProvider, model, err)
-		uc.auditFail(ctx, userMsg.ID.String(), err)
+		_ = uc.repo.SoftDeleteChatMessageByID(ctx, chatID, assistantMsgID)
+		uc.auditFail(ctx, userMsgID, err)
 		return nil, nil, nil, nil, err
 	}
 
-	userMsgID := userMsg.ID.String()
 	usageMeta := map[string]any{
-		"provider":      resolvedProvider,
-		"model":         effModel,
-		"userMessageId": userMsgID,
+		"provider":           resolvedProvider,
+		"model":              effModel,
+		"userMessageId":      userMsgID,
+		"assistantMessageId": assistantMsgID,
 	}
 	finalize := func(assistantContent string) (domain.ChatMessage, error) {
 		observability.Info("llm.stream.complete", map[string]any{
@@ -745,8 +760,15 @@ func (uc *UseCase) StreamMessage(
 			"session_id": chatID,
 			"chars":      len(assistantContent),
 		})
-		msg, err := uc.repo.SaveMessage(ctx, chatID, "", domain.RoleAssistant, assistantContent, resolvedProvider, effModel)
+		trimmed := strings.TrimSpace(assistantContent)
+		if trimmed == "" {
+			_ = uc.repo.SoftDeleteChatMessageByID(ctx, chatID, assistantMsgID)
+			uc.auditFail(ctx, userMsgID, errors.New("empty assistant response"))
+			return domain.ChatMessage{}, domain.ErrMissingContent
+		}
+		msg, err := uc.repo.UpdateAssistantMessageContent(ctx, chatID, assistantMsgID, assistantContent, resolvedProvider, effModel)
 		if err != nil {
+			_ = uc.repo.SoftDeleteChatMessageByID(ctx, chatID, assistantMsgID)
 			uc.auditFail(ctx, userMsgID, err)
 			return domain.ChatMessage{}, err
 		}
@@ -757,6 +779,11 @@ func (uc *UseCase) StreamMessage(
 	}
 	cancel := func(partialChars int) {
 		observability.LLMCancelled(resolvedProvider, effModel, userID, chatID, partialChars)
+		if partialChars == 0 {
+			cleanCtx, c := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = uc.repo.SoftDeleteChatMessageByID(cleanCtx, chatID, assistantMsgID)
+			c()
+		}
 		uc.auditCancel(userMsgID)
 	}
 

@@ -755,10 +755,12 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 	meta := map[string]any{
 		"provider": usage["provider"],
 		"model":    usage["model"],
-		"usage":    usage,
 	}
 	if uid, ok := usage["userMessageId"].(string); ok && uid != "" {
 		meta["userMessageId"] = uid
+	}
+	if aid, ok := usage["assistantMessageId"].(string); ok && aid != "" {
+		meta["assistantMessageId"] = aid
 	}
 	_ = writeSSE(w, map[string]any{"type": "meta", "meta": meta})
 	flusher.Flush()
@@ -774,21 +776,11 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 			if strings.TrimSpace(partialRaw) == "" {
 				cancelStream(0)
 			} else {
-				msg, ferr := finalize(partialRaw)
+				_, ferr := finalize(partialRaw)
 				if ferr != nil {
 					_ = writeSSE(w, map[string]any{"type": "error", "message": ferr.Error()})
 				} else {
-					partialMeta := map[string]any{
-						"assistantMessageId": msg.ID.String(),
-						"provider":           msg.Provider,
-						"model":              msg.Model,
-						"partial":            true,
-					}
-					if uid, ok := usage["userMessageId"].(string); ok && uid != "" {
-						partialMeta["userMessageId"] = uid
-					}
-					_ = writeSSE(w, map[string]any{"type": "meta", "meta": partialMeta})
-					_ = writeSSE(w, map[string]any{"type": "cancelled"})
+					_ = writeSSE(w, map[string]any{"type": "cancelled", "partial": true})
 				}
 				cancelStream(len(partialRaw))
 			}
@@ -797,19 +789,10 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		case ev, ok := <-events:
 			if !ok {
-				msg, ferr := finalize(out.String())
+				_, ferr := finalize(out.String())
 				if ferr != nil {
 					_ = writeSSE(w, map[string]any{"type": "error", "message": ferr.Error()})
 				} else {
-					doneMeta := map[string]any{
-						"assistantMessageId": msg.ID.String(),
-						"provider":           msg.Provider,
-						"model":              msg.Model,
-					}
-					if uid, ok := usage["userMessageId"].(string); ok && uid != "" {
-						doneMeta["userMessageId"] = uid
-					}
-					_ = writeSSE(w, map[string]any{"type": "meta", "meta": doneMeta})
 					_ = writeSSE(w, map[string]any{"type": "done"})
 				}
 				h.invalidateChatListAndSession(r.Context(), user.UserID, chatID)
