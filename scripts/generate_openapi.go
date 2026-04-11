@@ -443,6 +443,8 @@ paths:
     ChatMessage:
       type: object
       properties:
+        id: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
         role:
           type: string
           enum: [user, assistant, system]

@@ -162,6 +162,14 @@
           "content": {
             "type": "string"
           },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
           "model": {
             "type": "string"
           },
