@@ -74,7 +74,7 @@ func parseSSEEvents(body string) []map[string]any {
 	return out
 }
 
-func TestHandler_StreamMessage_initialMetaAndDoneIncludeUserMessageID(t *testing.T) {
+func TestHandler_StreamMessage_openingMetaHasBothIDsAndSingleMetaEvent(t *testing.T) {
 	ctx := context.Background()
 	mem := repo.NewMemoryRepository()
 	if err := mem.SyncSupportedModels(ctx, []domain.SupportedModel{
@@ -111,40 +111,46 @@ func TestHandler_StreamMessage_initialMetaAndDoneIncludeUserMessageID(t *testing
 		t.Fatalf("status %d body=%s", rr.Code, rr.Body.String())
 	}
 	events := parseSSEEvents(rr.Body.String())
-	var firstMeta, doneMeta map[string]any
+	metaCount := 0
+	var firstMeta map[string]any
 	for _, ev := range events {
 		if ev["type"] != "meta" {
 			continue
 		}
+		metaCount++
 		meta, _ := ev["meta"].(map[string]any)
 		if meta == nil {
 			continue
 		}
-		if _, ok := meta["userMessageId"]; ok && firstMeta == nil {
+		if firstMeta == nil {
 			firstMeta = meta
 		}
-		if _, ok := meta["assistantMessageId"]; ok {
-			doneMeta = meta
-		}
+	}
+	if metaCount != 1 {
+		t.Fatalf("expected exactly one meta event, got %d: %v", metaCount, events)
 	}
 	if firstMeta == nil {
-		t.Fatalf("no opening meta with userMessageId: %v", events)
+		t.Fatalf("no meta: %v", events)
 	}
 	if firstMeta["userMessageId"] == nil || firstMeta["userMessageId"] == "" {
 		t.Fatalf("first meta: %+v", firstMeta)
 	}
-	if doneMeta == nil {
-		t.Fatalf("no done meta with assistantMessageId: %v", events)
+	if firstMeta["assistantMessageId"] == nil || firstMeta["assistantMessageId"] == "" {
+		t.Fatalf("first meta missing assistantMessageId: %+v", firstMeta)
 	}
-	if doneMeta["userMessageId"] == nil || doneMeta["userMessageId"] == "" {
-		t.Fatalf("done meta missing userMessageId: %+v", doneMeta)
+	var hasDone bool
+	for _, ev := range events {
+		if ev["type"] == "done" {
+			hasDone = true
+			break
+		}
 	}
-	if doneMeta["assistantMessageId"] == nil || doneMeta["assistantMessageId"] == "" {
-		t.Fatalf("done meta: %+v", doneMeta)
+	if !hasDone {
+		t.Fatalf("expected type done: %v", events)
 	}
 }
 
-func TestHandler_StreamMessage_cancelPartialMetaIncludesUserMessageID(t *testing.T) {
+func TestHandler_StreamMessage_cancelPartialSendsFlagWithoutSecondMeta(t *testing.T) {
 	ctx := context.Background()
 	mem := repo.NewMemoryRepository()
 	if err := mem.SyncSupportedModels(ctx, []domain.SupportedModel{
@@ -189,27 +195,34 @@ func TestHandler_StreamMessage_cancelPartialMetaIncludesUserMessageID(t *testing
 		t.Fatalf("status %d body=%s", rr.Code, rr.Body.String())
 	}
 	events := parseSSEEvents(rr.Body.String())
-	var partialMeta map[string]any
+	metaCount := 0
+	var opening map[string]any
 	for _, ev := range events {
 		if ev["type"] != "meta" {
 			continue
 		}
-		meta, _ := ev["meta"].(map[string]any)
-		if meta == nil {
+		metaCount++
+		if m, ok := ev["meta"].(map[string]any); ok && m != nil && opening == nil {
+			opening = m
+		}
+	}
+	if metaCount != 1 {
+		t.Fatalf("expected one meta event, got %d: %v", metaCount, events)
+	}
+	if opening == nil || opening["assistantMessageId"] == nil || opening["assistantMessageId"] == "" {
+		t.Fatalf("opening meta: %+v", opening)
+	}
+	var cancelledPartial bool
+	for _, ev := range events {
+		if ev["type"] != "cancelled" {
 			continue
 		}
-		if v, ok := meta["partial"]; ok && v == true {
-			partialMeta = meta
+		if p, ok := ev["partial"].(bool); ok && p {
+			cancelledPartial = true
 			break
 		}
 	}
-	if partialMeta == nil {
-		t.Fatalf("expected partial meta, events=%v", events)
-	}
-	if partialMeta["userMessageId"] == nil || partialMeta["userMessageId"] == "" {
-		t.Fatalf("partial meta: %+v", partialMeta)
-	}
-	if partialMeta["assistantMessageId"] == nil || partialMeta["assistantMessageId"] == "" {
-		t.Fatalf("partial meta: %+v", partialMeta)
+	if !cancelledPartial {
+		t.Fatalf("expected cancelled with partial true, events=%v", events)
 	}
 }

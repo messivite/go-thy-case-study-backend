@@ -221,6 +221,95 @@ func (r *MemoryRepository) SaveMessage(ctx context.Context, sessionID, userID st
 	return message, nil
 }
 
+func (r *MemoryRepository) SaveAssistantPlaceholder(ctx context.Context, sessionID, messageID, provider, model string) (domain.ChatMessage, error) {
+	sessionUUID, err := uuid.Parse(sessionID)
+	if err != nil {
+		return domain.ChatMessage{}, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	mid, err := uuid.Parse(messageID)
+	if err != nil {
+		return domain.ChatMessage{}, fmt.Errorf("%w: %v", domain.ErrInvalidMessageID, err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.sessions[sessionUUID]; !ok || r.sessions[sessionUUID].DeletedAt != nil {
+		return domain.ChatMessage{}, domain.ErrSessionNotFound
+	}
+
+	msg := domain.ChatMessage{
+		ID:        mid,
+		SessionID: sessionUUID,
+		Role:      domain.RoleAssistant,
+		Content:   "",
+		CreatedAt: time.Now().UTC(),
+		Provider:  provider,
+		Model:     model,
+	}
+	r.messages[sessionUUID] = append(r.messages[sessionUUID], msg)
+	return msg, nil
+}
+
+func (r *MemoryRepository) UpdateAssistantMessageContent(ctx context.Context, sessionID, messageID, content, provider, model string) (domain.ChatMessage, error) {
+	sessionUUID, err := uuid.Parse(sessionID)
+	if err != nil {
+		return domain.ChatMessage{}, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	mid, err := uuid.Parse(messageID)
+	if err != nil {
+		return domain.ChatMessage{}, fmt.Errorf("%w: %v", domain.ErrInvalidMessageID, err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.sessions[sessionUUID]; !ok || r.sessions[sessionUUID].DeletedAt != nil {
+		return domain.ChatMessage{}, domain.ErrSessionNotFound
+	}
+	msgs := r.messages[sessionUUID]
+	for i := range msgs {
+		if msgs[i].ID != mid || msgs[i].Role != domain.RoleAssistant || msgs[i].DeletedAt != nil {
+			continue
+		}
+		msgs[i].Content = content
+		if provider != "" {
+			msgs[i].Provider = provider
+		}
+		if model != "" {
+			msgs[i].Model = model
+		}
+		r.messages[sessionUUID] = msgs
+		return msgs[i], nil
+	}
+	return domain.ChatMessage{}, domain.ErrMessageNotFound
+}
+
+func (r *MemoryRepository) SoftDeleteChatMessageByID(ctx context.Context, sessionID, messageID string) error {
+	sessionUUID, err := uuid.Parse(sessionID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	mid, err := uuid.Parse(messageID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidMessageID, err)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.sessions[sessionUUID]; !ok || r.sessions[sessionUUID].DeletedAt != nil {
+		return domain.ErrSessionNotFound
+	}
+	msgs := r.messages[sessionUUID]
+	for i := range msgs {
+		if msgs[i].ID == mid && msgs[i].DeletedAt == nil {
+			now := time.Now().UTC()
+			msgs[i].DeletedAt = &now
+			r.messages[sessionUUID] = msgs
+			return nil
+		}
+	}
+	return domain.ErrMessageNotFound
+}
+
 func (r *MemoryRepository) SaveMessages(ctx context.Context, sessionID, userID string, messages []domain.BatchMessage) ([]domain.ChatMessage, error) {
 	sessionUUID, err := uuid.Parse(sessionID)
 	if err != nil {

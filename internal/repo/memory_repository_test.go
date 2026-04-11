@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	domain "github.com/messivite/go-thy-case-study-backend/internal/domain/chat"
 )
 
@@ -316,5 +318,129 @@ func TestMemoryRepositorySupportedModels_syncListSortAndActive(t *testing.T) {
 	ok, err = r.IsModelActive(ctx, "a", "")
 	if err != nil || ok {
 		t.Fatalf("IsModelActive empty model: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestMemoryRepositoryAssistantPlaceholder_updateAndSoftDelete(t *testing.T) {
+	r := NewMemoryRepository()
+	ctx := context.Background()
+
+	s, err := r.CreateChatSession(ctx, "u-ph", "t", "openai", "gpt-4o")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.SaveMessage(ctx, s.ID.String(), "u-ph", domain.RoleUser, "hi", "openai", "gpt-4o"); err != nil {
+		t.Fatal(err)
+	}
+
+	aid := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+	ph, err := r.SaveAssistantPlaceholder(ctx, s.ID.String(), aid.String(), "openai", "gpt-4o")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ph.ID != aid || ph.Content != "" || ph.Role != domain.RoleAssistant {
+		t.Fatalf("placeholder: %+v", ph)
+	}
+
+	msgs, err := r.GetMessagesBySession(ctx, s.ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected user+placeholder, got %d", len(msgs))
+	}
+
+	updated, err := r.UpdateAssistantMessageContent(ctx, s.ID.String(), aid.String(), "answer", "openai", "gpt-4o")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Content != "answer" {
+		t.Fatalf("content: %q", updated.Content)
+	}
+
+	msgs, err = r.GetMessagesBySession(ctx, s.ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found string
+	for _, m := range msgs {
+		if m.ID == aid {
+			found = m.Content
+			break
+		}
+	}
+	if found != "answer" {
+		t.Fatalf("expected updated content in list, got %q", found)
+	}
+
+	if err := r.SoftDeleteChatMessageByID(ctx, s.ID.String(), aid.String()); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err = r.GetMessagesBySession(ctx, s.ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Role != domain.RoleUser {
+		t.Fatalf("after soft-delete assistant, want 1 user msg: %+v", msgs)
+	}
+}
+
+func TestMemoryRepositoryAssistantPlaceholder_errors(t *testing.T) {
+	r := NewMemoryRepository()
+	ctx := context.Background()
+	s, err := r.CreateChatSession(ctx, "u-err", "t", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	validAid := uuid.New().String()
+
+	if _, err := r.SaveAssistantPlaceholder(ctx, "not-uuid", validAid, "", ""); err == nil {
+		t.Fatal("expected invalid session id")
+	}
+	if _, err := r.SaveAssistantPlaceholder(ctx, s.ID.String(), "bad-id", "", ""); err == nil {
+		t.Fatal("expected invalid message id")
+	}
+	if _, err := r.SaveAssistantPlaceholder(ctx, "00000000-0000-0000-0000-000000000001", validAid, "", ""); err == nil {
+		t.Fatal("expected session not found")
+	}
+
+	if err := r.SoftDeleteChatMessageByID(ctx, "not-uuid", validAid); err == nil {
+		t.Fatal("expected invalid session id")
+	}
+	if err := r.SoftDeleteChatMessageByID(ctx, s.ID.String(), "bad"); err == nil {
+		t.Fatal("expected invalid message id")
+	}
+	if err := r.SoftDeleteChatMessageByID(ctx, s.ID.String(), "00000000-0000-0000-0000-000000000099"); err == nil {
+		t.Fatal("expected message not found")
+	}
+
+	if _, err := r.UpdateAssistantMessageContent(ctx, "nope", validAid, "x", "", ""); err == nil {
+		t.Fatal("expected invalid session id")
+	}
+	if _, err := r.UpdateAssistantMessageContent(ctx, s.ID.String(), "00000000-0000-0000-0000-000000000099", "x", "", ""); err == nil {
+		t.Fatal("expected message not found")
+	}
+
+	um, err := r.SaveMessage(ctx, s.ID.String(), "u-err", domain.RoleUser, "only-user", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.UpdateAssistantMessageContent(ctx, s.ID.String(), um.ID.String(), "nope", "", ""); err == nil {
+		t.Fatal("expected message not found for user row")
+	}
+}
+
+func TestMemoryRepositorySaveAssistantPlaceholder_deletedSession(t *testing.T) {
+	r := NewMemoryRepository()
+	ctx := context.Background()
+	s, err := r.CreateChatSession(ctx, "u-del", "t", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SoftDeleteChatSession(ctx, s.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.SaveAssistantPlaceholder(ctx, s.ID.String(), uuid.New().String(), "", ""); err == nil {
+		t.Fatal("expected session not found")
 	}
 }

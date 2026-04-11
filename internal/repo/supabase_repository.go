@@ -181,6 +181,83 @@ func (r *SupabaseRepository) SaveMessage(ctx context.Context, sessionID, userID 
 	return rows[0].toDomain(), nil
 }
 
+func (r *SupabaseRepository) SaveAssistantPlaceholder(ctx context.Context, sessionID, messageID, provider, model string) (domain.ChatMessage, error) {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return domain.ChatMessage{}, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	if _, err := uuid.Parse(messageID); err != nil {
+		return domain.ChatMessage{}, fmt.Errorf("%w: %v", domain.ErrInvalidMessageID, err)
+	}
+
+	body := map[string]any{
+		"id":         messageID,
+		"session_id": sessionID,
+		"role":       string(domain.RoleAssistant),
+		"content":    "",
+	}
+	if provider != "" {
+		body["provider"] = provider
+	}
+	if model != "" {
+		body["model"] = model
+	}
+
+	var rows []chatMessageRow
+	if err := r.doRequest(ctx, http.MethodPost, "/chat_messages", body, &rows); err != nil {
+		return domain.ChatMessage{}, fmt.Errorf("save assistant placeholder: %w", err)
+	}
+	if len(rows) == 0 {
+		return domain.ChatMessage{}, fmt.Errorf("save assistant placeholder: no rows returned")
+	}
+	return rows[0].toDomain(), nil
+}
+
+func (r *SupabaseRepository) UpdateAssistantMessageContent(ctx context.Context, sessionID, messageID, content, provider, model string) (domain.ChatMessage, error) {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return domain.ChatMessage{}, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	if _, err := uuid.Parse(messageID); err != nil {
+		return domain.ChatMessage{}, fmt.Errorf("%w: %v", domain.ErrInvalidMessageID, err)
+	}
+
+	body := map[string]any{"content": content}
+	if provider != "" {
+		body["provider"] = provider
+	}
+	if model != "" {
+		body["model"] = model
+	}
+	path := fmt.Sprintf("/chat_messages?id=eq.%s&session_id=eq.%s&role=eq.assistant&deleted_at=is.null", messageID, sessionID)
+	var rows []chatMessageRow
+	if err := r.doRequest(ctx, http.MethodPatch, path, body, &rows); err != nil {
+		return domain.ChatMessage{}, fmt.Errorf("update assistant message: %w", err)
+	}
+	if len(rows) == 0 {
+		return domain.ChatMessage{}, domain.ErrMessageNotFound
+	}
+	return rows[0].toDomain(), nil
+}
+
+func (r *SupabaseRepository) SoftDeleteChatMessageByID(ctx context.Context, sessionID, messageID string) error {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	if _, err := uuid.Parse(messageID); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidMessageID, err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	body := map[string]any{"deleted_at": now}
+	path := fmt.Sprintf("/chat_messages?id=eq.%s&session_id=eq.%s&deleted_at=is.null", messageID, sessionID)
+	var rows []chatMessageRow
+	if err := r.doRequest(ctx, http.MethodPatch, path, body, &rows); err != nil {
+		return fmt.Errorf("soft delete message: %w", err)
+	}
+	if len(rows) == 0 {
+		return domain.ErrMessageNotFound
+	}
+	return nil
+}
+
 func (r *SupabaseRepository) SaveMessages(ctx context.Context, sessionID, userID string, messages []domain.BatchMessage) ([]domain.ChatMessage, error) {
 	if _, err := uuid.Parse(sessionID); err != nil {
 		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
