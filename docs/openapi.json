@@ -437,6 +437,30 @@
         ],
         "type": "object"
       },
+      "PatchMeRequest": {
+        "description": "Tüm alanlar opsiyonel; en az bir alan veya multipart istekte avatar dosyası gerekir.",
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          },
+          "onboardingCompleted": {
+            "type": "boolean"
+          },
+          "preferredModel": {
+            "type": "string"
+          },
+          "preferredProvider": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PostMessageRequest": {
         "properties": {
           "content": {
@@ -839,6 +863,72 @@
           }
         },
         "summary": "Mevcut kullanıcı bilgisi",
+        "tags": [
+          "auth"
+        ]
+      },
+      "patch": {
+        "operationId": "patchMe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchMeRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "avatar": {
+                    "description": "300x300 JPEG'e indirgenir; Supabase Storage avatars bucket",
+                    "format": "binary",
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "locale": {
+                    "type": "string"
+                  },
+                  "onboardingCompleted": {
+                    "description": "true veya false",
+                    "type": "string"
+                  },
+                  "preferredModel": {
+                    "type": "string"
+                  },
+                  "preferredProvider": {
+                    "type": "string"
+                  },
+                  "timezone": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Güncel kimlik + profil (GET /me ile aynı şema)"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "summary": "Profil güncelle (JSON veya multipart + avatar)",
         "tags": [
           "auth"
         ]

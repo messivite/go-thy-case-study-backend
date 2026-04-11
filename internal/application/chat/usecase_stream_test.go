@@ -61,6 +61,26 @@ func (streamImmediateCloseProvider) Stream(ctx context.Context, req domain.Provi
 	return ch, nil
 }
 
+// streamBlockProvider keeps the stream open until ctx is cancelled (simulates in-flight SSE before stop).
+type streamBlockProvider struct{}
+
+func (streamBlockProvider) Name() string { return "streamblock" }
+
+func (streamBlockProvider) Complete(ctx context.Context, req domain.ProviderRequest) (domain.ProviderResponse, error) {
+	_, _ = ctx, req
+	return domain.ProviderResponse{Content: ""}, nil
+}
+
+func (streamBlockProvider) Stream(ctx context.Context, req domain.ProviderRequest) (<-chan domain.StreamEvent, error) {
+	_, _ = ctx, req
+	ch := make(chan domain.StreamEvent)
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+	return ch, nil
+}
+
 func TestUseCase_StreamMessage_usageMetaIncludesUserAndAssistantMessageIDs(t *testing.T) {
 	ctx := context.Background()
 	mem := repo.NewMemoryRepository()
@@ -174,5 +194,48 @@ func TestUseCase_StreamMessage_finalizeEmpty_softDeletesPlaceholder(t *testing.T
 	}
 	if len(msgs) != 1 || msgs[0].Role != domain.RoleUser {
 		t.Fatalf("expected only user after empty finalize, got %d %+v", len(msgs), msgs)
+	}
+}
+
+func TestUseCase_StreamMessage_cancelZeroRollsBackUserMessage(t *testing.T) {
+	ctx := context.Background()
+	mem := repo.NewMemoryRepository()
+	if err := mem.SyncSupportedModels(ctx, []domain.SupportedModel{
+		{Provider: "streamblock", ModelID: "m1", DisplayName: "M1", SupportsStream: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := mem.CreateChatSession(ctx, "u1", "t", "streamblock", "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := provider.NewRegistry("streamblock")
+	reg.Register(streamBlockProvider{}, provider.ProviderMeta{
+		Name: "streamblock", DefaultModel: "m1", RequiredEnvKey: "X", SupportsStream: true,
+	})
+	uc := NewUseCase(mem, &meUsageQuotaStub{q: domain.UserQuota{QuotaBypass: true}}, reg, mem)
+
+	before, err := mem.GetMessagesBySession(ctx, s.ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n0 := len(before)
+
+	streamCtx, streamStop := context.WithCancel(ctx)
+	events, _, _, cancel, err := uc.StreamMessage(streamCtx, "u1", s.ID.String(), "streamblock", "m1", "hello", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel(0)
+	streamStop()
+	for range events {
+	}
+
+	after, err := mem.GetMessagesBySession(ctx, s.ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != n0 {
+		t.Fatalf("stop with no partial should roll back user+assistant; got %d messages want %d", len(after), n0)
 	}
 }

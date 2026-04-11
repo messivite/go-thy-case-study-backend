@@ -25,4 +25,6 @@ type Repository interface {
 	GetMessagesBySessionPage(ctx context.Context, sessionID string, limit int, direction string, cursor *MessageCursor) ([]ChatMessage, int, error)
 	SearchChats(ctx context.Context, params SearchChatParams) (SearchChatsResult, error)
 	GetUserProfile(ctx context.Context, userID string) (UserProfile, error)
+	PatchUserProfile(ctx context.Context, userID string, patch ProfilePatch) (UserProfile, error)
+	UploadUserAvatarJPEG(ctx context.Context, userID string, jpeg []byte) (publicURL string, err error)
 }
