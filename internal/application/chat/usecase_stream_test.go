@@ -114,7 +114,7 @@ func TestUseCase_StreamMessage_usageMetaIncludesUserAndAssistantMessageIDs(t *te
 			b.WriteString(ev.Delta)
 		}
 	}
-	msg, err := finalize(b.String())
+	msg, err := finalize(b.String(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestUseCase_StreamMessage_finalizeEmpty_softDeletesPlaceholder(t *testing.T
 	}
 	for range events {
 	}
-	_, err = finalize("")
+	_, err = finalize("", nil)
 	if err == nil {
 		t.Fatal("expected empty finalize error")
 	}

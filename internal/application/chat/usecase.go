@@ -20,7 +20,7 @@ import (
 	"github.com/messivite/go-thy-case-study-backend/internal/repo"
 )
 
-type StreamFinalize func(assistantContent string) (domain.ChatMessage, error)
+type StreamFinalize func(assistantContent string, streamUsage map[string]any) (domain.ChatMessage, error)
 type StreamCancel func(partialChars int)
 
 type SyncResult struct {
@@ -800,7 +800,7 @@ func (uc *UseCase) StreamMessage(
 		"userMessageId":      userMsgID,
 		"assistantMessageId": assistantMsgID,
 	}
-	finalize := func(assistantContent string) (domain.ChatMessage, error) {
+	finalize := func(assistantContent string, streamUsage map[string]any) (domain.ChatMessage, error) {
 		observability.Info("llm.stream.complete", map[string]any{
 			"provider":   resolvedProvider,
 			"model":      effModel,
@@ -822,6 +822,10 @@ func (uc *UseCase) StreamMessage(
 		if err := uc.repo.UpdateSessionLastLLM(ctx, chatID, resolvedProvider, effModel); err != nil {
 			observability.Info("session.last_llm.update_failed", map[string]any{"session_id": chatID, "err": err.Error()})
 		}
+		usage := mergeStreamUsageForAudit(resolvedProvider, effModel, streamUsage)
+		if usage.TotalTokens > 0 || usage.PromptTokens > 0 || usage.CompletionTokens > 0 {
+			uc.auditUsage(ctx, userMsgID, usage)
+		}
 		return msg, nil
 	}
 	cancel := func(partialChars int) {
@@ -837,6 +841,29 @@ func (uc *UseCase) StreamMessage(
 	}
 
 	return events, usageMeta, finalize, cancel, nil
+}
+
+func mergeStreamUsageForAudit(resolvedProvider, effModel string, streamUsage map[string]any) domain.NormalizedUsage {
+	raw := make(map[string]any)
+	for k, v := range streamUsage {
+		raw[k] = v
+	}
+	if !usageMapHasNonEmptyString(raw, "provider") {
+		raw["provider"] = resolvedProvider
+	}
+	if !usageMapHasNonEmptyString(raw, "model") {
+		raw["model"] = effModel
+	}
+	return domain.NormalizeUsage(raw)
+}
+
+func usageMapHasNonEmptyString(m map[string]any, key string) bool {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return false
+	}
+	s, ok := v.(string)
+	return ok && strings.TrimSpace(s) != ""
 }
 
 // auditFail records an LLM failure in llm_interaction_log via RPC.
@@ -863,7 +890,7 @@ func (uc *UseCase) auditCancel(userMessageID string) {
 
 // auditUsage records token usage in llm_interaction_log via RPC.
 func (uc *UseCase) auditUsage(ctx context.Context, userMessageID string, usage domain.NormalizedUsage) {
-	if usage.TotalTokens == 0 && usage.PromptTokens == 0 {
+	if usage.TotalTokens == 0 && usage.PromptTokens == 0 && usage.CompletionTokens == 0 {
 		return
 	}
 	if err := uc.quotaRepo.SetUsageLog(ctx, userMessageID, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens); err != nil {
