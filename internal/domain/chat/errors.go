@@ -34,4 +34,7 @@ var (
 
 	ErrInvalidLikeAction   = errors.New("action must be 1 (like) or 2 (unlike)")
 	ErrMessageNotLikeable  = errors.New("this message cannot be liked or unliked")
+
+	ErrLikeSyncEmptyItems   = errors.New("like sync requires at least one item")
+	ErrLikeSyncTooManyItems = errors.New("like sync allows at most 100 items per request")
 )

@@ -102,6 +102,29 @@ type messageLikeResponse struct {
 	State int `json:"state"`
 }
 
+// Tek öğe: { "messageId", "action" } veya toplu: { "items": [ { "messageId", "action" }, ... ] }
+type syncMessageLikesRequest struct {
+	MessageID *string                 `json:"messageId,omitempty"`
+	Action    *int                    `json:"action,omitempty"`
+	Items     []syncMessageLikeItemIn `json:"items,omitempty"`
+}
+
+type syncMessageLikeItemIn struct {
+	MessageID string `json:"messageId"`
+	Action    int    `json:"action"`
+}
+
+type syncMessageLikesResponse struct {
+	Results []syncMessageLikeResultOut `json:"results"`
+}
+
+type syncMessageLikeResultOut struct {
+	MessageID string `json:"messageId"`
+	OK        bool   `json:"ok"`
+	State     int    `json:"state,omitempty"`
+	Code      string `json:"code,omitempty"`
+}
+
 type chatDetailResponse struct {
 	ID       string        `json:"id"`
 	Title    string        `json:"title"`
@@ -660,6 +683,57 @@ func (h *Handler) PostMessageLike(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, messageLikeResponse{State: state})
 }
 
+func (h *Handler) PostSyncMessageLikes(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.AuthenticatedUserFromContext(r.Context())
+	if !ok {
+		httpx.Unauthorized(w)
+		return
+	}
+	chatID := chi.URLParam(r, "chatID")
+
+	var req syncMessageLikesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.BadRequest(w, "Invalid request payload")
+		return
+	}
+
+	var items []domain.MessageLikeSyncItem
+	if len(req.Items) > 0 {
+		items = make([]domain.MessageLikeSyncItem, 0, len(req.Items))
+		for _, x := range req.Items {
+			items = append(items, domain.MessageLikeSyncItem{
+				MessageID: strings.TrimSpace(x.MessageID),
+				Action:    x.Action,
+			})
+		}
+	} else if req.MessageID != nil && strings.TrimSpace(*req.MessageID) != "" && req.Action != nil {
+		items = []domain.MessageLikeSyncItem{{
+			MessageID: strings.TrimSpace(*req.MessageID),
+			Action:    *req.Action,
+		}}
+	} else {
+		httpx.BadRequest(w, "provide items array or messageId + action")
+		return
+	}
+
+	results, err := h.uc.SyncChatMessageLikes(r.Context(), user.UserID, chatID, items)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	h.invalidateChatMessages(r.Context(), user.UserID, chatID)
+	out := syncMessageLikesResponse{Results: make([]syncMessageLikeResultOut, 0, len(results))}
+	for _, row := range results {
+		out.Results = append(out.Results, syncMessageLikeResultOut{
+			MessageID: row.MessageID,
+			OK:        row.OK,
+			State:     row.State,
+			Code:      row.Code,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.AuthenticatedUserFromContext(r.Context())
 	if !ok {
@@ -1057,6 +1131,8 @@ func writeAppError(w http.ResponseWriter, err error) {
 	case errors.Is(err, domain.ErrInvalidImagePayload), errors.Is(err, domain.ErrAvatarTooLarge), errors.Is(err, domain.ErrProfilePatchEmpty):
 		httpx.BadRequest(w, err.Error())
 	case errors.Is(err, domain.ErrInvalidLikeAction), errors.Is(err, domain.ErrMessageNotLikeable):
+		httpx.BadRequest(w, err.Error())
+	case errors.Is(err, domain.ErrLikeSyncEmptyItems), errors.Is(err, domain.ErrLikeSyncTooManyItems):
 		httpx.BadRequest(w, err.Error())
 	default:
 		httpx.Internal(w)

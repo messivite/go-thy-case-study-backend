@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -20,7 +21,7 @@ type MemoryRepository struct {
 	mu              sync.RWMutex
 	sessions        map[uuid.UUID]domain.ChatSession
 	messages        map[uuid.UUID][]domain.ChatMessage
-	likes           map[string]struct{} // "userID\x00messageID"
+	likes           map[string]bool // "userID\x00messageID" → true=like, false=unlike (satır var)
 	supportedModels []domain.SupportedModel
 	profiles        map[string]domain.UserProfile // user id string -> patched profile
 }
@@ -29,7 +30,7 @@ func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{
 		sessions: make(map[uuid.UUID]domain.ChatSession),
 		messages: make(map[uuid.UUID][]domain.ChatMessage),
-		likes:    make(map[string]struct{}),
+		likes:    make(map[string]bool),
 		profiles: make(map[string]domain.UserProfile),
 	}
 }
@@ -733,17 +734,17 @@ func (r *MemoryRepository) SetChatMessageLike(ctx context.Context, userID, sessi
 
 	k := messageLikeKey(userID, messageID)
 	if action == 1 {
-		r.likes[k] = struct{}{}
+		r.likes[k] = true
 	} else {
-		delete(r.likes, k)
+		r.likes[k] = false
 	}
-	if _, liked := r.likes[k]; liked {
+	if r.likes[k] {
 		return 1, nil
 	}
 	return 2, nil
 }
 
-func (r *MemoryRepository) MessageLikedByUser(ctx context.Context, userID string, messageIDs []string) (map[string]bool, error) {
+func (r *MemoryRepository) MessageLikeStates(ctx context.Context, userID string, messageIDs []string) (map[string]bool, error) {
 	_ = ctx
 	if _, err := uuid.Parse(userID); err != nil {
 		return map[string]bool{}, nil
@@ -759,9 +760,71 @@ func (r *MemoryRepository) MessageLikedByUser(ctx context.Context, userID string
 		if _, err := uuid.Parse(id); err != nil {
 			continue
 		}
-		if _, ok := r.likes[messageLikeKey(userID, id)]; ok {
-			out[id] = true
+		if v, ok := r.likes[messageLikeKey(userID, id)]; ok {
+			out[id] = v
 		}
+	}
+	return out, nil
+}
+
+func memoryLikeSyncErrCode(err error) string {
+	switch {
+	case errors.Is(err, domain.ErrInvalidSessionID):
+		return "invalid_session_id"
+	case errors.Is(err, domain.ErrInvalidMessageID):
+		return "invalid_message_id"
+	case errors.Is(err, domain.ErrSessionNotFound):
+		return "session_not_found"
+	case errors.Is(err, domain.ErrUnauthorized):
+		return "unauthorized"
+	case errors.Is(err, domain.ErrMessageNotFound):
+		return "message_not_found"
+	case errors.Is(err, domain.ErrMessageNotLikeable):
+		return "message_not_likeable"
+	case errors.Is(err, domain.ErrInvalidLikeAction):
+		return "invalid_action"
+	default:
+		return "unknown"
+	}
+}
+
+func (r *MemoryRepository) SyncChatMessageLikes(ctx context.Context, userID, sessionID string, items []domain.MessageLikeSyncItem) ([]domain.MessageLikeSyncResult, error) {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	sid, _ := uuid.Parse(sessionID)
+	r.mu.RLock()
+	sess, ok := r.sessions[sid]
+	owner := ""
+	validSession := ok && sess.DeletedAt == nil
+	if validSession {
+		owner = sess.UserID
+	}
+	r.mu.RUnlock()
+	if !validSession {
+		return nil, domain.ErrSessionNotFound
+	}
+	if owner != userID {
+		return nil, domain.ErrUnauthorized
+	}
+
+	out := make([]domain.MessageLikeSyncResult, 0, len(items))
+	for _, it := range items {
+		mid := strings.TrimSpace(it.MessageID)
+		state, err := r.SetChatMessageLike(ctx, userID, sessionID, mid, it.Action)
+		if err != nil {
+			out = append(out, domain.MessageLikeSyncResult{
+				MessageID: mid,
+				OK:        false,
+				Code:      memoryLikeSyncErrCode(err),
+			})
+			continue
+		}
+		out = append(out, domain.MessageLikeSyncResult{
+			MessageID: mid,
+			OK:        true,
+			State:     state,
+		})
 	}
 	return out, nil
 }
