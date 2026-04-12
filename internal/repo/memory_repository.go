@@ -20,6 +20,7 @@ type MemoryRepository struct {
 	mu              sync.RWMutex
 	sessions        map[uuid.UUID]domain.ChatSession
 	messages        map[uuid.UUID][]domain.ChatMessage
+	likes           map[string]struct{} // "userID\x00messageID"
 	supportedModels []domain.SupportedModel
 	profiles        map[string]domain.UserProfile // user id string -> patched profile
 }
@@ -28,6 +29,7 @@ func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{
 		sessions: make(map[uuid.UUID]domain.ChatSession),
 		messages: make(map[uuid.UUID][]domain.ChatMessage),
+		likes:    make(map[string]struct{}),
 		profiles: make(map[string]domain.UserProfile),
 	}
 }
@@ -675,4 +677,91 @@ func (r *MemoryRepository) IsModelActive(ctx context.Context, providerName, mode
 		}
 	}
 	return false, nil
+}
+
+func messageLikeKey(userID, messageID string) string {
+	return userID + "\x00" + messageID
+}
+
+func (r *MemoryRepository) SetChatMessageLike(ctx context.Context, userID, sessionID, messageID string, action int) (int, error) {
+	_ = ctx
+	sid, err := uuid.Parse(sessionID)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	mid, err := uuid.Parse(messageID)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %v", domain.ErrInvalidMessageID, err)
+	}
+	if action != 1 && action != 2 {
+		return 0, domain.ErrInvalidLikeAction
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sess, ok := r.sessions[sid]
+	if !ok || sess.DeletedAt != nil {
+		return 0, domain.ErrSessionNotFound
+	}
+	if sess.UserID != userID {
+		return 0, domain.ErrUnauthorized
+	}
+
+	msgs := r.messages[sid]
+	var found *domain.ChatMessage
+	for i := range msgs {
+		if msgs[i].ID == mid {
+			found = &msgs[i]
+			break
+		}
+	}
+	if found == nil {
+		return 0, domain.ErrMessageNotFound
+	}
+	if found.DeletedAt != nil {
+		return 0, domain.ErrMessageNotFound
+	}
+	if found.Role == domain.RoleSystem {
+		return 0, domain.ErrMessageNotLikeable
+	}
+	if found.Role == domain.RoleUser {
+		if found.UserID != userID {
+			return 0, domain.ErrMessageNotLikeable
+		}
+	}
+
+	k := messageLikeKey(userID, messageID)
+	if action == 1 {
+		r.likes[k] = struct{}{}
+	} else {
+		delete(r.likes, k)
+	}
+	if _, liked := r.likes[k]; liked {
+		return 1, nil
+	}
+	return 2, nil
+}
+
+func (r *MemoryRepository) MessageLikedByUser(ctx context.Context, userID string, messageIDs []string) (map[string]bool, error) {
+	_ = ctx
+	if _, err := uuid.Parse(userID); err != nil {
+		return map[string]bool{}, nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string]bool)
+	for _, id := range messageIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, err := uuid.Parse(id); err != nil {
+			continue
+		}
+		if _, ok := r.likes[messageLikeKey(userID, id)]; ok {
+			out[id] = true
+		}
+	}
+	return out, nil
 }

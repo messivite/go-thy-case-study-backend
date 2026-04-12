@@ -2,22 +2,25 @@
 # Sunucu / önbellek ayarı bu dosyada değil: CACHE_ENABLED, CACHE_BACKEND, CACHE_TTL_* , REDIS_* ortam değişkenleri (internal/cache.FromEnv + thy-case-llm cache config).
 # POST /api/chats
 #   body:  { "title"?: string, "provider"?: string, "model"?: string, "content"?: string }
-#   201:   content yoksa { "id", "provider", "model" }; content varsa ayrıca "assistantMessage", "usage"
+#   201:   content yoksa { "id", "provider", "model" }; content varsa ayrıca "assistantMessage" (içinde "liked"), "usage"
 # GET /api/chats
 #   200:   legacy array OR pagination object (when limit/cursor verilir):
 #          { "totalCount","hasNext","nextCursor","items":[{...}] }
 # GET /api/chats/{chatID}
-#   200:   { "id", "title", "provider", "model", "messages": [{ "id", "createdAt", "role", "content", "provider"?, "model"? }, ...] }
+#   200:   { "id", "title", "provider", "model", "messages": [{ ..., "liked": null|true|false }, ...] } — system: null; user/assistant: boolean
 # DELETE /api/chats/{chatID}
 #   204:   soft-delete session (deleted_at set), ownership required
 # GET /api/chats/{chatID}/messages
 #   query: limit, cursor, direction=older|newer
-#   200:   { "totalCount","hasNext","nextCursor","direction","items":[{ "id","createdAt","role","content",...}] }
+#   200:   { "totalCount","hasNext","nextCursor","direction","items":[{ ...,"liked": null|true|false }] }
 # DELETE /api/chats/{chatID}/messages/{messageID}
 #   204:   kullanıcı sadece kendi user mesajını soft-delete edebilir
+# POST /api/chats/{chatID}/messages/{messageID}/like
+#   body:  { "action": 1 | 2 }  — 1=like (insert), 2=unlike (delete); yalnızca oturum sahibi, kendi user mesajı veya asistan yanıtı
+#   200:   { "state": 1 | 2 }    — güncel durum: 1=beğenildi, 2=beğenilmedi (idempotent)
 # POST /api/chats/{chatID}/messages
 #   body:  { "provider"?, "model"?, "content"?, "messages"? }
-#   201:   { "assistantMessage": { "id","createdAt","role","content","provider"?, "model"? }, "usage"?: object }
+#   201:   { "assistantMessage": { ...,"liked" }, "usage"?: object }
 # POST /api/chats/{chatID}/stream
 #   body:  aynı; cevap text/event-stream, data: JSON (meta | delta | done)
 #   İlk meta: userMessageId, provider, model (kullanıcı mesajı DB'ye yazıldıktan hemen sonra; assistantMessageId yoktur).
@@ -83,6 +86,10 @@ endpoints:
   - method: DELETE
     path: /chats/{chatID}/messages/{messageID}
     handler: DeleteMessage
+    auth: true
+  - method: POST
+    path: /chats/{chatID}/messages/{messageID}/like
+    handler: PostMessageLike
     auth: true
   - method: POST
     path: /chats/{chatID}/messages

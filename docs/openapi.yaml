@@ -151,11 +151,45 @@ paths:
       operationId: deleteMessage
       parameters:
         - $ref: "#/components/parameters/chatID"
+        - $ref: "#/components/parameters/messageID"
       responses:
         "200":
           description: OK
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /chats/{chatID}/messages/{messageID}/like:
+    post:
+      tags: [messages]
+      summary: Mesaj beğen / beğenmeyi kaldır (kişisel)
+      operationId: postMessageLike
+      description: |
+        action 1 = like (satır ekler), 2 = unlike (satır siler). Yalnızca oturum sahibi; hedef mesaj bu sohbette olmalı.
+        Kendi user mesajın veya asistan yanıtı; system veya başkasının user mesajı reddedilir.
+        Tek Postgres RPC ile doğrulama + yazma; yanıt state güncel durumu gösterir (idempotent).
+      parameters:
+        - $ref: "#/components/parameters/chatID"
+        - $ref: "#/components/parameters/messageID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageLikeRequest"
+      responses:
+        "200":
+          description: Güncel beğeni durumu
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageLikeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /chats/{chatID}/stream:
     post:
       tags: [messages]
@@ -307,6 +341,13 @@ components:
       schema:
         type: string
         format: uuid
+    messageID:
+      name: messageID
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   schemas:
     MeUser:
       type: object
@@ -425,6 +466,10 @@ components:
         content: { type: string }
         provider: { type: string }
         model: { type: string }
+        liked:
+          type: boolean
+          nullable: true
+          description: Oturum sahibi için beğeni; system mesajlarında null, user/assistant için true/false (sunucu yanıtlarında)
       required: [role, content]
     ChatListItem:
       type: object
@@ -457,6 +502,22 @@ components:
         messages:
           type: array
           items: { $ref: "#/components/schemas/ChatMessage" }
+    MessageLikeRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: integer
+          enum: [1, 2]
+          description: 1 = like, 2 = unlike
+    MessageLikeResponse:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: integer
+          enum: [1, 2]
+          description: 1 = beğenildi, 2 = beğenilmedi (işlem sonrası güncel durum)
     AssistantResponse:
       type: object
       properties:
@@ -489,6 +550,11 @@ components:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     NotFound:
       description: Kaynak bulunamadı
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    Forbidden:
+      description: Bu kaynak için yetki yok
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
