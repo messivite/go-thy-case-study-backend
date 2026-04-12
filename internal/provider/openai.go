@@ -89,6 +89,9 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req domain.ProviderRequest)
 		Model:    model,
 		Messages: toOpenAIMessages(req.Messages),
 		Stream:   true,
+		StreamOptions: &openaiStreamOptions{
+			IncludeUsage: true,
+		},
 	}
 
 	respBody, err := p.doRequest(ctx, body)
@@ -118,6 +121,24 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req domain.ProviderRequest)
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 				events <- domain.StreamEvent{Type: domain.EventError, Message: "parse hatası: " + err.Error()}
 				return
+			}
+
+			if chunk.Usage != nil {
+				u := chunk.Usage
+				if u.PromptTokens > 0 || u.CompletionTokens > 0 || u.TotalTokens > 0 {
+					meta := map[string]any{
+						"provider":          "openai",
+						"model":             model,
+						"prompt_tokens":     u.PromptTokens,
+						"completion_tokens": u.CompletionTokens,
+						"total_tokens":      u.TotalTokens,
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case events <- domain.StreamEvent{Type: domain.EventMeta, Meta: meta}:
+					}
+				}
 			}
 
 			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
@@ -175,10 +196,15 @@ func (p *OpenAIProvider) doRequest(ctx context.Context, body openaiRequest) (io.
 // OpenAI API types
 // ---------------------------------------------------------------------------
 
+type openaiStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
 type openaiRequest struct {
-	Model    string          `json:"model"`
-	Messages []openaiMessage `json:"messages"`
-	Stream   bool            `json:"stream"`
+	Model         string               `json:"model"`
+	Messages      []openaiMessage      `json:"messages"`
+	Stream        bool                 `json:"stream"`
+	StreamOptions *openaiStreamOptions `json:"stream_options,omitempty"`
 }
 
 type openaiMessage struct {
@@ -206,6 +232,11 @@ type openaiStreamChunk struct {
 			Content string `json:"content"`
 		} `json:"delta"`
 	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage,omitempty"`
 }
 
 func toOpenAIMessages(messages []domain.ChatMessage) []openaiMessage {

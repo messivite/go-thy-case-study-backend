@@ -561,6 +561,14 @@ veya:
 go run ./cmd/api
 ```
 
+Yerel API’yi (varsayılan port **8082**) internet üzerinden paylaşmak veya mobil / başka bir makineden test etmek için [ngrok](https://ngrok.com/) kullanabilirsiniz:
+
+```bash
+ngrok http 8082
+```
+
+Komut, `localhost:8082`’ye tünel açan geçici bir HTTPS URL üretir; bu adresi istemci veya webhook tarafında taban URL olarak kullanın (`/api` yolu aynı kalır).
+
 ## Deploy
 
 CLI v0.3.0+ ile deploy şablonları üretilir:

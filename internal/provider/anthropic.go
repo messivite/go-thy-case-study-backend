@@ -163,7 +163,27 @@ func (p *AnthropicProvider) Stream(ctx context.Context, req domain.ProviderReque
 				case events <- domain.StreamEvent{Type: domain.EventDelta, Delta: text}:
 				}
 			case "message_delta":
-				// usage burada da gelebilir; şimdilik yok sayıyoruz (finalize repo tarafında)
+				u, _ := raw["usage"].(map[string]any)
+				if u == nil {
+					continue
+				}
+				in := anthropicJSONInt(u["input_tokens"])
+				out := anthropicJSONInt(u["output_tokens"])
+				if in == 0 && out == 0 {
+					continue
+				}
+				meta := map[string]any{
+					"provider":      p.name,
+					"model":         model,
+					"input_tokens":  in,
+					"output_tokens": out,
+					"total_tokens":  in + out,
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case events <- domain.StreamEvent{Type: domain.EventMeta, Meta: meta}:
+				}
 			case "message_stop":
 				select {
 				case <-ctx.Done():
@@ -264,6 +284,19 @@ type anthropicMessageResponse struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`
+}
+
+func anthropicJSONInt(v any) int {
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case int64:
+		return int(n)
+	default:
+		return 0
+	}
 }
 
 func extractAnthropicTextContent(blocks []struct {

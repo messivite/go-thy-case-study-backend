@@ -116,6 +116,22 @@ func (p *GeminiProvider) Stream(ctx context.Context, req domain.ProviderRequest)
 				return
 			}
 
+			um := chunk.UsageMetadata
+			if um.PromptTokenCount > 0 || um.CandidatesTokenCount > 0 || um.TotalTokenCount > 0 {
+				meta := map[string]any{
+					"provider":          "gemini",
+					"model":             model,
+					"prompt_tokens":     um.PromptTokenCount,
+					"completion_tokens": um.CandidatesTokenCount,
+					"total_tokens":      um.TotalTokenCount,
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case events <- domain.StreamEvent{Type: domain.EventMeta, Meta: meta}:
+				}
+			}
+
 			if len(chunk.Candidates) > 0 && len(chunk.Candidates[0].Content.Parts) > 0 {
 				text := chunk.Candidates[0].Content.Parts[0].Text
 				if text != "" {

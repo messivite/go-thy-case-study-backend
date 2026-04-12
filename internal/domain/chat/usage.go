@@ -14,7 +14,13 @@ func NormalizeUsage(raw map[string]any) NormalizedUsage {
 		Model:    getString(raw, "model"),
 	}
 	u.PromptTokens = getInt(raw, "prompt_tokens")
+	if u.PromptTokens == 0 {
+		u.PromptTokens = getInt(raw, "input_tokens")
+	}
 	u.CompletionTokens = getInt(raw, "completion_tokens")
+	if u.CompletionTokens == 0 {
+		u.CompletionTokens = getInt(raw, "output_tokens")
+	}
 	u.TotalTokens = getInt(raw, "total_tokens")
 
 	if u.TotalTokens == 0 && (u.PromptTokens > 0 || u.CompletionTokens > 0) {

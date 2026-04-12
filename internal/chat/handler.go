@@ -769,6 +769,7 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 	defer heartbeat.Stop()
 
 	var out strings.Builder
+	var streamUsage map[string]any
 	for {
 		select {
 		case <-streamCtx.Done():
@@ -776,7 +777,7 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 			if strings.TrimSpace(partialRaw) == "" {
 				cancelStream(0)
 			} else {
-				_, ferr := finalize(partialRaw)
+				_, ferr := finalize(partialRaw, streamUsage)
 				if ferr != nil {
 					_ = writeSSE(w, map[string]any{"type": "error", "message": ferr.Error()})
 				} else {
@@ -789,7 +790,7 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		case ev, ok := <-events:
 			if !ok {
-				_, ferr := finalize(out.String())
+				_, ferr := finalize(out.String(), streamUsage)
 				if ferr != nil {
 					_ = writeSSE(w, map[string]any{"type": "error", "message": ferr.Error()})
 				} else {
@@ -802,12 +803,21 @@ func (h *Handler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 			if ev.Type == domain.EventDelta {
 				out.WriteString(ev.Delta)
 			}
+			if ev.Type == domain.EventMeta {
+				if m, ok := ev.Meta.(map[string]any); ok {
+					streamUsage = m
+				}
+			}
 			// Provider iç sinyali; kanal kapanınca zaten assistantMessageId + type "done" gönderilir.
 			if ev.Type == domain.EventDone {
 				continue
 			}
+			sseType := string(ev.Type)
+			if ev.Type == domain.EventMeta {
+				sseType = "usage"
+			}
 			_ = writeSSE(w, map[string]any{
-				"type":    string(ev.Type),
+				"type":    sseType,
 				"delta":   ev.Delta,
 				"message": ev.Message,
 				"meta":    ev.Meta,
