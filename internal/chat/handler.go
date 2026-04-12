@@ -66,6 +66,7 @@ type chatMessage struct {
 	Content   string `json:"content"`
 	Provider  string `json:"provider,omitempty"`
 	Model     string `json:"model,omitempty"`
+	Liked     *bool  `json:"liked"`
 }
 
 type syncRequest struct {
@@ -89,6 +90,16 @@ type syncResponse struct {
 	SyncedMessages   []chatMessage  `json:"syncedMessages"`
 	AssistantMessage chatMessage    `json:"assistantMessage"`
 	Usage            map[string]any `json:"usage,omitempty"`
+}
+
+// messageLikeRequest: action 1 = like, 2 = unlike.
+type messageLikeRequest struct {
+	Action int `json:"action"`
+}
+
+// messageLikeResponse: state 1 = liked, 2 = not liked (after the operation).
+type messageLikeResponse struct {
+	State int `json:"state"`
 }
 
 type chatDetailResponse struct {
@@ -621,6 +632,34 @@ func (h *Handler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handler) PostMessageLike(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.AuthenticatedUserFromContext(r.Context())
+	if !ok {
+		httpx.Unauthorized(w)
+		return
+	}
+	chatID := chi.URLParam(r, "chatID")
+	messageID := chi.URLParam(r, "messageID")
+
+	var req messageLikeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.BadRequest(w, "Invalid request payload")
+		return
+	}
+	if req.Action != 1 && req.Action != 2 {
+		httpx.BadRequest(w, "action must be 1 (like) or 2 (unlike)")
+		return
+	}
+
+	state, err := h.uc.SetChatMessageLike(r.Context(), user.UserID, chatID, messageID, req.Action)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	h.invalidateChatMessages(r.Context(), user.UserID, chatID)
+	writeJSON(w, http.StatusOK, messageLikeResponse{State: state})
+}
+
 func (h *Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.AuthenticatedUserFromContext(r.Context())
 	if !ok {
@@ -933,6 +972,7 @@ func chatMessageFromDomain(m domain.ChatMessage) chatMessage {
 		Content:   m.Content,
 		Provider:  m.Provider,
 		Model:     m.Model,
+		Liked:     m.Liked,
 	}
 }
 
@@ -1015,6 +1055,8 @@ func writeAppError(w http.ResponseWriter, err error) {
 	case errors.Is(err, domain.ErrUserCancelled):
 		httpx.GenerationCancelled(w)
 	case errors.Is(err, domain.ErrInvalidImagePayload), errors.Is(err, domain.ErrAvatarTooLarge), errors.Is(err, domain.ErrProfilePatchEmpty):
+		httpx.BadRequest(w, err.Error())
+	case errors.Is(err, domain.ErrInvalidLikeAction), errors.Is(err, domain.ErrMessageNotLikeable):
 		httpx.BadRequest(w, err.Error())
 	default:
 		httpx.Internal(w)

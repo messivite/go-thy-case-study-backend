@@ -27,4 +27,8 @@ type Repository interface {
 	GetUserProfile(ctx context.Context, userID string) (UserProfile, error)
 	PatchUserProfile(ctx context.Context, userID string, patch ProfilePatch) (UserProfile, error)
 	UploadUserAvatarJPEG(ctx context.Context, userID string, jpeg []byte) (publicURL string, err error)
+	// SetChatMessageLike: action 1 = like (insert), 2 = unlike (delete). Returns state 1 = liked, 2 = not liked.
+	SetChatMessageLike(ctx context.Context, userID, sessionID, messageID string, action int) (state int, err error)
+	// MessageLikedByUser: verilen message id’lerinden kullanıcının beğendikleri (tek sorgu / toplu).
+	MessageLikedByUser(ctx context.Context, userID string, messageIDs []string) (liked map[string]bool, err error)
 }

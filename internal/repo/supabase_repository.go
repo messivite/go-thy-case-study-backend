@@ -400,6 +400,160 @@ func (r *SupabaseRepository) SearchChats(ctx context.Context, params domain.Sear
 	}, nil
 }
 
+func (r *SupabaseRepository) SetChatMessageLike(ctx context.Context, userID, sessionID, messageID string, action int) (int, error) {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return 0, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	if _, err := uuid.Parse(messageID); err != nil {
+		return 0, fmt.Errorf("%w: %v", domain.ErrInvalidMessageID, err)
+	}
+	if action != 1 && action != 2 {
+		return 0, domain.ErrInvalidLikeAction
+	}
+
+	body := map[string]any{
+		"p_user_id":    userID,
+		"p_session_id": sessionID,
+		"p_message_id": messageID,
+		"p_action":     action,
+	}
+	status, respBody, err := r.postRPCStatusBody(ctx, "/rpc/set_chat_message_like", body)
+	if err != nil {
+		return 0, err
+	}
+	if status >= 400 {
+		return 0, mapSetChatMessageLikeError(status, respBody)
+	}
+	state, err := decodeLikeStateResponse(respBody)
+	if err != nil {
+		return 0, fmt.Errorf("set_chat_message_like: %w", err)
+	}
+	return state, nil
+}
+
+func (r *SupabaseRepository) postRPCStatusBody(ctx context.Context, path string, body any) (int, []byte, error) {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return 0, nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.baseURL+path, bytes.NewReader(data))
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("apikey", r.serviceRoleKey)
+	req.Header.Set("Authorization", "Bearer "+r.serviceRoleKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return 0, nil, fmt.Errorf("supabase request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, respBody, nil
+}
+
+func decodeLikeStateResponse(b []byte) (int, error) {
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil || m == nil {
+		var arr []map[string]any
+		if err2 := json.Unmarshal(b, &arr); err2 != nil || len(arr) != 1 {
+			return 0, fmt.Errorf("parse body: %s", string(b))
+		}
+		m = arr[0]
+	}
+	v, ok := m["state"]
+	if !ok {
+		return 0, fmt.Errorf("missing state")
+	}
+	switch x := v.(type) {
+	case float64:
+		if x == 1 || x == 2 {
+			return int(x), nil
+		}
+	case int:
+		if x == 1 || x == 2 {
+			return x, nil
+		}
+	case int64:
+		if x == 1 || x == 2 {
+			return int(x), nil
+		}
+	}
+	return 0, fmt.Errorf("invalid state %v", v)
+}
+
+func mapSetChatMessageLikeError(status int, body []byte) error {
+	var p struct {
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(body, &p)
+	msg := strings.ToLower(strings.TrimSpace(p.Message))
+	switch {
+	case strings.Contains(msg, "session_not_found"):
+		return domain.ErrSessionNotFound
+	case strings.Contains(msg, "message_not_found"):
+		return domain.ErrMessageNotFound
+	case strings.Contains(msg, "message_not_likeable"):
+		return domain.ErrMessageNotLikeable
+	case strings.Contains(msg, "invalid_action"):
+		return domain.ErrInvalidLikeAction
+	case strings.Contains(msg, "unauthorized"):
+		return domain.ErrUnauthorized
+	default:
+		if status == http.StatusNotFound {
+			return domain.ErrSessionNotFound
+		}
+		return fmt.Errorf("set_chat_message_like %d: %s", status, string(body))
+	}
+}
+
+type messageLikeIDRow struct {
+	MessageID string `json:"message_id"`
+}
+
+func (r *SupabaseRepository) MessageLikedByUser(ctx context.Context, userID string, messageIDs []string) (map[string]bool, error) {
+	out := make(map[string]bool)
+	if _, err := uuid.Parse(userID); err != nil {
+		return out, nil
+	}
+	seen := make(map[string]struct{})
+	var clean []string
+	for _, id := range messageIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, err := uuid.Parse(id); err != nil {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		clean = append(clean, id)
+	}
+	if len(clean) == 0 {
+		return out, nil
+	}
+
+	path := fmt.Sprintf(
+		"/chat_message_likes?user_id=eq.%s&message_id=in.(%s)&select=message_id",
+		userID,
+		strings.Join(clean, ","),
+	)
+	var rows []messageLikeIDRow
+	if err := r.doRequest(ctx, http.MethodGet, path, nil, &rows); err != nil {
+		return nil, fmt.Errorf("message likes: %w", err)
+	}
+	for _, row := range rows {
+		if row.MessageID != "" {
+			out[row.MessageID] = true
+		}
+	}
+	return out, nil
+}
+
 func (r *SupabaseRepository) GetUserProfile(ctx context.Context, userID string) (domain.UserProfile, error) {
 	if _, err := uuid.Parse(userID); err != nil {
 		return domain.UserProfile{}, fmt.Errorf("get profile: %w", err)

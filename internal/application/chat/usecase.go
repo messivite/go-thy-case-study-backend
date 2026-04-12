@@ -122,6 +122,9 @@ func (uc *UseCase) GetChat(ctx context.Context, userID, chatID string) (domain.C
 	if err != nil {
 		return domain.ChatSession{}, nil, err
 	}
+	if err := uc.attachMessageLiked(ctx, userID, messages); err != nil {
+		return domain.ChatSession{}, nil, err
+	}
 	return session, messages, nil
 }
 
@@ -156,6 +159,54 @@ func (uc *UseCase) DeleteOwnMessage(ctx context.Context, userID, chatID, message
 		return domain.ErrUnauthorized
 	}
 	return uc.repo.SoftDeleteUserMessage(ctx, chatID, messageID, userID)
+}
+
+// SetChatMessageLike: action 1 = like, 2 = unlike. Returns state 1 = liked, 2 = unliked (tek Supabase RPC).
+func (uc *UseCase) SetChatMessageLike(ctx context.Context, userID, chatID, messageID string, action int) (state int, err error) {
+	return uc.repo.SetChatMessageLike(ctx, userID, chatID, messageID, action)
+}
+
+func ptrBool(b bool) *bool {
+	x := b
+	return &x
+}
+
+// attachMessageLiked fills Liked for API: system → nil; user/assistant → false/true (toplu repo sorgusu).
+func (uc *UseCase) attachMessageLiked(ctx context.Context, userID string, msgs []domain.ChatMessage) error {
+	if len(msgs) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(msgs))
+	for i := range msgs {
+		m := msgs[i]
+		if m.DeletedAt != nil {
+			continue
+		}
+		if m.Role == domain.RoleSystem {
+			continue
+		}
+		if m.ID == uuid.Nil {
+			continue
+		}
+		ids = append(ids, m.ID.String())
+	}
+	likedMap, err := uc.repo.MessageLikedByUser(ctx, userID, ids)
+	if err != nil {
+		return err
+	}
+	for i := range msgs {
+		m := &msgs[i]
+		if m.Role == domain.RoleSystem {
+			m.Liked = nil
+			continue
+		}
+		if m.ID == uuid.Nil || m.DeletedAt != nil {
+			m.Liked = nil
+			continue
+		}
+		m.Liked = ptrBool(likedMap[m.ID.String()])
+	}
+	return nil
 }
 
 func (uc *UseCase) GetSessionSummary(ctx context.Context, chatID string, sessionCreatedAt time.Time) (lastMessagePreview string, updatedAt time.Time) {
@@ -397,6 +448,9 @@ func (uc *UseCase) GetChatMessagesPage(
 	if direction == "older" {
 		slices.Reverse(rows)
 	}
+	if err := uc.attachMessageLiked(ctx, userID, rows); err != nil {
+		return ChatMessagesPage{}, err
+	}
 
 	next := ""
 	if hasNext && len(rows) > 0 {
@@ -618,7 +672,11 @@ func (uc *UseCase) SendMessage(
 
 	uc.auditUsage(ctx, userMsg.ID.String(), usage)
 
-	return assistant, resp.Usage, nil
+	assistantOut := []domain.ChatMessage{assistant}
+	if err := uc.attachMessageLiked(ctx, userID, assistantOut); err != nil {
+		return domain.ChatMessage{}, nil, err
+	}
+	return assistantOut[0], resp.Usage, nil
 }
 
 func (uc *UseCase) SyncMessages(
@@ -713,9 +771,17 @@ func (uc *UseCase) SyncMessages(
 		uc.auditUsage(ctx, savedUsers[len(savedUsers)-1].ID.String(), usage)
 	}
 
+	if err := uc.attachMessageLiked(ctx, userID, savedUsers); err != nil {
+		return SyncResult{}, err
+	}
+	assistantOut := []domain.ChatMessage{assistant}
+	if err := uc.attachMessageLiked(ctx, userID, assistantOut); err != nil {
+		return SyncResult{}, err
+	}
+
 	return SyncResult{
 		SyncedMessages:   savedUsers,
-		AssistantMessage: assistant,
+		AssistantMessage: assistantOut[0],
 		Usage:            resp.Usage,
 	}, nil
 }

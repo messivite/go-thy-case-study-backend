@@ -9,6 +9,15 @@
           "format": "uuid",
           "type": "string"
         }
+      },
+      "messageID": {
+        "in": "path",
+        "name": "messageID",
+        "required": true,
+        "schema": {
+          "format": "uuid",
+          "type": "string"
+        }
       }
     },
     "responses": {
@@ -21,6 +30,16 @@
           }
         },
         "description": "Geçersiz istek"
+      },
+      "Forbidden": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        },
+        "description": "Bu kaynak için yetki yok"
       },
       "NotFound": {
         "content": {
@@ -169,6 +188,11 @@
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "liked": {
+            "description": "Oturum sahibi için beğeni; system mesajlarında null, user/assistant için true/false (sunucu yanıtlarında)",
+            "nullable": true,
+            "type": "boolean"
           },
           "model": {
             "type": "string"
@@ -434,6 +458,38 @@
         },
         "required": [
           "id"
+        ],
+        "type": "object"
+      },
+      "MessageLikeRequest": {
+        "properties": {
+          "action": {
+            "description": "1 = like, 2 = unlike",
+            "enum": [
+              1,
+              2
+            ],
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "MessageLikeResponse": {
+        "properties": {
+          "state": {
+            "description": "1 = beğenildi, 2 = beğenilmedi (işlem sonrası güncel durum)",
+            "enum": [
+              1,
+              2
+            ],
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state"
         ],
         "type": "object"
       },
@@ -751,6 +807,9 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/chatID"
+          },
+          {
+            "$ref": "#/components/parameters/messageID"
           }
         ],
         "responses": {
@@ -764,6 +823,58 @@
         "summary": "DeleteMessage",
         "tags": [
           "misc"
+        ]
+      }
+    },
+    "/chats/{chatID}/messages/{messageID}/like": {
+      "post": {
+        "description": "action 1 = like (satır ekler), 2 = unlike (satır siler). Yalnızca oturum sahibi; hedef mesaj bu sohbette olmalı.\nKendi user mesajın veya asistan yanıtı; system veya başkasının user mesajı reddedilir.\nTek Postgres RPC ile doğrulama + yazma; yanıt state güncel durumu gösterir (idempotent).\n",
+        "operationId": "postMessageLike",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/chatID"
+          },
+          {
+            "$ref": "#/components/parameters/messageID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageLikeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageLikeResponse"
+                }
+              }
+            },
+            "description": "Güncel beğeni durumu"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "summary": "Mesaj beğen / beğenmeyi kaldır (kişisel)",
+        "tags": [
+          "messages"
         ]
       }
     },

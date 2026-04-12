@@ -44,6 +44,8 @@ type ChatMessage struct {
 	DeletedAt *time.Time
 	Provider  string
 	Model     string
+	// Liked: nil = system / not applicable; false = not liked; true = liked by current user (API yanıtlarında doldurulur).
+	Liked *bool
 }
 
 type StreamEventType string

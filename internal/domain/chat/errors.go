@@ -31,4 +31,7 @@ var (
 	ErrInvalidImagePayload = errors.New("geçersiz veya desteklenmeyen görsel")
 	ErrAvatarTooLarge      = errors.New("avatar dosyası çok büyük")
 	ErrProfilePatchEmpty   = errors.New("güncellenecek alan veya avatar yok")
+
+	ErrInvalidLikeAction   = errors.New("action must be 1 (like) or 2 (unlike)")
+	ErrMessageNotLikeable  = errors.New("this message cannot be liked or unliked")
 )

@@ -88,16 +88,30 @@ func buildPathBlocks(endpoints []Endpoint) string {
 	return out.String()
 }
 
+func openAPIPathParams(path string) string {
+	var b strings.Builder
+	if strings.Contains(path, "{chatID}") {
+		if b.Len() == 0 {
+			b.WriteString("      parameters:\n")
+		}
+		b.WriteString("        - $ref: \"#/components/parameters/chatID\"\n")
+	}
+	if strings.Contains(path, "{messageID}") {
+		if b.Len() == 0 {
+			b.WriteString("      parameters:\n")
+		}
+		b.WriteString("        - $ref: \"#/components/parameters/messageID\"\n")
+	}
+	return b.String()
+}
+
 func operationFor(e Endpoint) string {
 	m := strings.ToLower(strings.TrimSpace(e.Method))
 	sec := ""
 	if !e.Auth {
 		sec = "      security: []\n"
 	}
-	pathParam := ""
-	if strings.Contains(e.Path, "{chatID}") {
-		pathParam = "      parameters:\n        - $ref: \"#/components/parameters/chatID\"\n"
-	}
+	pathParam := openAPIPathParams(e.Path)
 
 	switch e.Handler {
 	case "Health":
@@ -318,6 +332,37 @@ func operationFor(e Endpoint) string {
         "504":
           $ref: "#/components/responses/ProviderTimeout"
 `, m, sec, pathParam)
+	case "PostMessageLike":
+		return fmt.Sprintf(`    %s:
+      tags: [messages]
+      summary: Mesaj beğen / beğenmeyi kaldır (kişisel)
+      operationId: postMessageLike
+      description: |
+        action 1 = like (satır ekler), 2 = unlike (satır siler). Yalnızca oturum sahibi; hedef mesaj bu sohbette olmalı.
+        Kendi user mesajın veya asistan yanıtı; system veya başkasının user mesajı reddedilir.
+        Tek Postgres RPC ile doğrulama + yazma; yanıt state güncel durumu gösterir (idempotent).
+%s%s      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageLikeRequest"
+      responses:
+        "200":
+          description: Güncel beğeni durumu
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageLikeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+`, m, sec, pathParam)
 	default:
 		return fmt.Sprintf(`    %s:
       tags: [misc]
@@ -378,6 +423,13 @@ paths:
   parameters:
     chatID:
       name: chatID
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    messageID:
+      name: messageID
       in: path
       required: true
       schema:
@@ -501,6 +553,10 @@ paths:
         content: { type: string }
         provider: { type: string }
         model: { type: string }
+        liked:
+          type: boolean
+          nullable: true
+          description: Oturum sahibi için beğeni; system mesajlarında null, user/assistant için true/false (sunucu yanıtlarında)
       required: [role, content]
     ChatListItem:
       type: object
@@ -533,6 +589,22 @@ paths:
         messages:
           type: array
           items: { $ref: "#/components/schemas/ChatMessage" }
+    MessageLikeRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: integer
+          enum: [1, 2]
+          description: 1 = like, 2 = unlike
+    MessageLikeResponse:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: integer
+          enum: [1, 2]
+          description: 1 = beğenildi, 2 = beğenilmedi (işlem sonrası güncel durum)
     AssistantResponse:
       type: object
       properties:
@@ -565,6 +637,11 @@ paths:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
     NotFound:
       description: Kaynak bulunamadı
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    Forbidden:
+      description: Bu kaynak için yetki yok
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
