@@ -166,12 +166,23 @@ func (uc *UseCase) SetChatMessageLike(ctx context.Context, userID, chatID, messa
 	return uc.repo.SetChatMessageLike(ctx, userID, chatID, messageID, action)
 }
 
+// SyncChatMessageLikes: offline kuyruk; 1–100 öğe, tek RPC (Supabase). Tek öğe için de items: [{...}] veya messageId+action kullanılabilir.
+func (uc *UseCase) SyncChatMessageLikes(ctx context.Context, userID, chatID string, items []domain.MessageLikeSyncItem) ([]domain.MessageLikeSyncResult, error) {
+	if len(items) == 0 {
+		return nil, domain.ErrLikeSyncEmptyItems
+	}
+	if len(items) > 100 {
+		return nil, domain.ErrLikeSyncTooManyItems
+	}
+	return uc.repo.SyncChatMessageLikes(ctx, userID, chatID, items)
+}
+
 func ptrBool(b bool) *bool {
 	x := b
 	return &x
 }
 
-// attachMessageLiked fills Liked for API: system → nil; user/assistant → false/true (toplu repo sorgusu).
+// attachMessageLiked: log yok → nil; satır liked=true → true; satır liked=false (action 2) → false.
 func (uc *UseCase) attachMessageLiked(ctx context.Context, userID string, msgs []domain.ChatMessage) error {
 	if len(msgs) == 0 {
 		return nil
@@ -190,7 +201,7 @@ func (uc *UseCase) attachMessageLiked(ctx context.Context, userID string, msgs [
 		}
 		ids = append(ids, m.ID.String())
 	}
-	likedMap, err := uc.repo.MessageLikedByUser(ctx, userID, ids)
+	states, err := uc.repo.MessageLikeStates(ctx, userID, ids)
 	if err != nil {
 		return err
 	}
@@ -204,7 +215,11 @@ func (uc *UseCase) attachMessageLiked(ctx context.Context, userID string, msgs [
 			m.Liked = nil
 			continue
 		}
-		m.Liked = ptrBool(likedMap[m.ID.String()])
+		if v, ok := states[m.ID.String()]; ok {
+			m.Liked = ptrBool(v)
+		} else {
+			m.Liked = nil
+		}
 	}
 	return nil
 }

@@ -363,6 +363,37 @@ func operationFor(e Endpoint) string {
         "404":
           $ref: "#/components/responses/NotFound"
 `, m, sec, pathParam)
+	case "PostSyncMessageLikes":
+		return fmt.Sprintf(`    %s:
+      tags: [messages]
+      summary: Like/unlike senkron (offline kuyruk, toplu veya tek)
+      operationId: postSyncMessageLikes
+      description: |
+        Tek gövde: ya items dizisi (1–100) ya da tek messageId + action.
+        Her satır için ayrı sonuç; ok=false ise code (ör. message_not_found, message_not_likeable).
+        Tek Postgres RPC ile işlenir.
+%s%s      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SyncMessageLikesRequest"
+      responses:
+        "200":
+          description: Satır bazlı sonuçlar
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncMessageLikesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+`, m, sec, pathParam)
 	default:
 		return fmt.Sprintf(`    %s:
       tags: [misc]
@@ -556,7 +587,7 @@ paths:
         liked:
           type: boolean
           nullable: true
-          description: Oturum sahibi için beğeni; system mesajlarında null, user/assistant için true/false (sunucu yanıtlarında)
+          description: null = hiç log yok; true = action 1 (like); false = action 2 (unlike) kaydı var. System mesajında null.
       required: [role, content]
     ChatListItem:
       type: object
@@ -605,6 +636,48 @@ paths:
           type: integer
           enum: [1, 2]
           description: 1 = beğenildi, 2 = beğenilmedi (işlem sonrası güncel durum)
+    SyncMessageLikeItem:
+      type: object
+      required: [messageId, action]
+      properties:
+        messageId: { type: string, format: uuid }
+        action:
+          type: integer
+          enum: [1, 2]
+          description: 1 = like, 2 = unlike
+    SyncMessageLikesRequest:
+      type: object
+      description: Ya items dizisi (1–100) ya da tek kayıt için messageId + action (ikisi birden verilirse items öncelikli).
+      properties:
+        messageId: { type: string, format: uuid }
+        action:
+          type: integer
+          enum: [1, 2]
+        items:
+          type: array
+          maxItems: 100
+          minItems: 1
+          items: { $ref: "#/components/schemas/SyncMessageLikeItem" }
+    SyncMessageLikeResultItem:
+      type: object
+      required: [messageId, ok]
+      properties:
+        messageId: { type: string, format: uuid }
+        ok: { type: boolean }
+        state:
+          type: integer
+          enum: [1, 2]
+          description: ok=true iken güncel durum
+        code:
+          type: string
+          description: ok=false iken (ör. invalid_item, message_not_found)
+    SyncMessageLikesResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/SyncMessageLikeResultItem" }
     AssistantResponse:
       type: object
       properties:

@@ -44,7 +44,7 @@ type ChatMessage struct {
 	DeletedAt *time.Time
 	Provider  string
 	Model     string
-	// Liked: nil = system / not applicable; false = not liked; true = liked by current user (API yanıtlarında doldurulur).
+	// Liked: nil = log yok; true = action 1 (liked); false = action 2 (unlike) satırı var. System/silinmiş mesajda nil.
 	Liked *bool
 }
 
@@ -73,4 +73,18 @@ type ProviderRequest struct {
 type ProviderResponse struct {
 	Content string
 	Usage   map[string]any
+}
+
+// MessageLikeSyncItem: offline kuyruktan senkron; action 1=like, 2=unlike.
+type MessageLikeSyncItem struct {
+	MessageID string
+	Action    int
+}
+
+// MessageLikeSyncResult: satır bazlı sonuç (ok=false iken Code dolu).
+type MessageLikeSyncResult struct {
+	MessageID string
+	OK        bool
+	State     int    // 1 liked, 2 unliked when OK
+	Code      string // e.g. message_not_found, message_not_likeable
 }

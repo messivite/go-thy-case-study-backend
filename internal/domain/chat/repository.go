@@ -29,6 +29,8 @@ type Repository interface {
 	UploadUserAvatarJPEG(ctx context.Context, userID string, jpeg []byte) (publicURL string, err error)
 	// SetChatMessageLike: action 1 = like (insert), 2 = unlike (delete). Returns state 1 = liked, 2 = not liked.
 	SetChatMessageLike(ctx context.Context, userID, sessionID, messageID string, action int) (state int, err error)
-	// MessageLikedByUser: verilen message id’lerinden kullanıcının beğendikleri (tek sorgu / toplu).
-	MessageLikedByUser(ctx context.Context, userID string, messageIDs []string) (liked map[string]bool, err error)
+	// MessageLikeStates: DB’de satırı olan mesajlar; değer liked kolonu (true/false). Anahtar yok → API’de liked null.
+	MessageLikeStates(ctx context.Context, userID string, messageIDs []string) (states map[string]bool, err error)
+	// SyncChatMessageLikes: tek RPC ile 1..N like/unlike (offline kuyruk).
+	SyncChatMessageLikes(ctx context.Context, userID, sessionID string, items []MessageLikeSyncItem) ([]MessageLikeSyncResult, error)
 }

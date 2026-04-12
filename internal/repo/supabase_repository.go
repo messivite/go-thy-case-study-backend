@@ -508,11 +508,12 @@ func mapSetChatMessageLikeError(status int, body []byte) error {
 	}
 }
 
-type messageLikeIDRow struct {
+type messageLikeStateRow struct {
 	MessageID string `json:"message_id"`
+	Liked     bool   `json:"liked"`
 }
 
-func (r *SupabaseRepository) MessageLikedByUser(ctx context.Context, userID string, messageIDs []string) (map[string]bool, error) {
+func (r *SupabaseRepository) MessageLikeStates(ctx context.Context, userID string, messageIDs []string) (map[string]bool, error) {
 	out := make(map[string]bool)
 	if _, err := uuid.Parse(userID); err != nil {
 		return out, nil
@@ -538,20 +539,89 @@ func (r *SupabaseRepository) MessageLikedByUser(ctx context.Context, userID stri
 	}
 
 	path := fmt.Sprintf(
-		"/chat_message_likes?user_id=eq.%s&message_id=in.(%s)&select=message_id",
+		"/chat_message_likes?user_id=eq.%s&message_id=in.(%s)&select=message_id,liked",
 		userID,
 		strings.Join(clean, ","),
 	)
-	var rows []messageLikeIDRow
+	var rows []messageLikeStateRow
 	if err := r.doRequest(ctx, http.MethodGet, path, nil, &rows); err != nil {
-		return nil, fmt.Errorf("message likes: %w", err)
+		return nil, fmt.Errorf("message like states: %w", err)
 	}
 	for _, row := range rows {
 		if row.MessageID != "" {
-			out[row.MessageID] = true
+			out[row.MessageID] = row.Liked
 		}
 	}
 	return out, nil
+}
+
+type syncChatMessageLikesRPCRow struct {
+	MessageID string `json:"messageId"`
+	OK        bool   `json:"ok"`
+	State     int    `json:"state"`
+	Code      string `json:"code"`
+}
+
+type syncChatMessageLikesRPCBody struct {
+	Error   string                     `json:"error"`
+	Results []syncChatMessageLikesRPCRow `json:"results"`
+}
+
+func (r *SupabaseRepository) SyncChatMessageLikes(ctx context.Context, userID, sessionID string, items []domain.MessageLikeSyncItem) ([]domain.MessageLikeSyncResult, error) {
+	if _, err := uuid.Parse(sessionID); err != nil {
+		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidSessionID, err)
+	}
+	arr := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		arr = append(arr, map[string]any{
+			"messageId": strings.TrimSpace(it.MessageID),
+			"action":    it.Action,
+		})
+	}
+	body := map[string]any{
+		"p_user_id":    userID,
+		"p_session_id": sessionID,
+		"p_items":      arr,
+	}
+	status, respBody, err := r.postRPCStatusBody(ctx, "/rpc/sync_chat_message_likes", body)
+	if err != nil {
+		return nil, err
+	}
+	if status >= 400 {
+		return nil, fmt.Errorf("sync_chat_message_likes %d: %s", status, string(respBody))
+	}
+	var parsed syncChatMessageLikesRPCBody
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return nil, fmt.Errorf("sync_chat_message_likes parse: %w", err)
+	}
+	if strings.TrimSpace(parsed.Error) != "" {
+		return nil, mapSyncChatMessageLikesTopError(parsed.Error)
+	}
+	out := make([]domain.MessageLikeSyncResult, 0, len(parsed.Results))
+	for _, row := range parsed.Results {
+		out = append(out, domain.MessageLikeSyncResult{
+			MessageID: row.MessageID,
+			OK:        row.OK,
+			State:     row.State,
+			Code:      row.Code,
+		})
+	}
+	return out, nil
+}
+
+func mapSyncChatMessageLikesTopError(code string) error {
+	switch strings.TrimSpace(code) {
+	case "session_not_found":
+		return domain.ErrSessionNotFound
+	case "unauthorized":
+		return domain.ErrUnauthorized
+	case "invalid_items", "empty_items":
+		return domain.ErrLikeSyncEmptyItems
+	case "too_many_items":
+		return domain.ErrLikeSyncTooManyItems
+	default:
+		return fmt.Errorf("sync_chat_message_likes: %s", code)
+	}
 }
 
 func (r *SupabaseRepository) GetUserProfile(ctx context.Context, userID string) (domain.UserProfile, error) {

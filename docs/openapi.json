@@ -190,7 +190,7 @@
             "type": "string"
           },
           "liked": {
-            "description": "Oturum sahibi için beğeni; system mesajlarında null, user/assistant için true/false (sunucu yanıtlarında)",
+            "description": "null = hiç log yok; true = action 1 (like); false = action 2 (unlike) kaydı var. System mesajında null.",
             "nullable": true,
             "type": "boolean"
           },
@@ -578,6 +578,94 @@
           "supportsStream"
         ],
         "type": "object"
+      },
+      "SyncMessageLikeItem": {
+        "properties": {
+          "action": {
+            "description": "1 = like, 2 = unlike",
+            "enum": [
+              1,
+              2
+            ],
+            "type": "integer"
+          },
+          "messageId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "messageId",
+          "action"
+        ],
+        "type": "object"
+      },
+      "SyncMessageLikeResultItem": {
+        "properties": {
+          "code": {
+            "description": "ok=false iken (ör. invalid_item, message_not_found)",
+            "type": "string"
+          },
+          "messageId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "state": {
+            "description": "ok=true iken güncel durum",
+            "enum": [
+              1,
+              2
+            ],
+            "type": "integer"
+          }
+        },
+        "required": [
+          "messageId",
+          "ok"
+        ],
+        "type": "object"
+      },
+      "SyncMessageLikesRequest": {
+        "description": "Ya items dizisi (1–100) ya da tek kayıt için messageId + action (ikisi birden verilirse items öncelikli).",
+        "properties": {
+          "action": {
+            "enum": [
+              1,
+              2
+            ],
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SyncMessageLikeItem"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "messageId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SyncMessageLikesResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SyncMessageLikeResultItem"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -724,6 +812,55 @@
         "summary": "Sohbet detayı",
         "tags": [
           "chats"
+        ]
+      }
+    },
+    "/chats/{chatID}/likes/sync": {
+      "post": {
+        "description": "Tek gövde: ya items dizisi (1–100) ya da tek messageId + action.\nHer satır için ayrı sonuç; ok=false ise code (ör. message_not_found, message_not_likeable).\nTek Postgres RPC ile işlenir.\n",
+        "operationId": "postSyncMessageLikes",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/chatID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncMessageLikesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncMessageLikesResponse"
+                }
+              }
+            },
+            "description": "Satır bazlı sonuçlar"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "summary": "Like/unlike senkron (offline kuyruk, toplu veya tek)",
+        "tags": [
+          "messages"
         ]
       }
     },
