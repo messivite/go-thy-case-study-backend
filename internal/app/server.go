@@ -53,6 +53,8 @@ func NewServer(authService auth.AuthService, chatHandler *chat.Handler, cfg Serv
 
 		r.Group(func(r chi.Router) {
 			r.Use(auth.AuthMiddleware(authService))
+			// Personalized GETs must not be cached by proxies (would leak one user's /me/usage etc.).
+			r.Use(middleware.NoCache)
 			r.Get("/me", chatHandler.Me)
 			r.Patch("/me", chatHandler.PatchMe)
 			r.Get("/me/usage", chatHandler.MeUsage)
