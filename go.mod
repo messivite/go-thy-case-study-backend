@@ -10,6 +10,7 @@ require (
 
 require (
 	github.com/disintegration/imaging v1.6.2
+	github.com/go-chi/cors v1.2.2
 	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.7.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0

@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"github.com/messivite/go-thy-case-study-backend/internal/auth"
 	"github.com/messivite/go-thy-case-study-backend/internal/chat"
 	"github.com/messivite/go-thy-case-study-backend/internal/landing"
@@ -24,6 +25,13 @@ func NewServer(authService auth.AuthService, chatHandler *chat.Handler, cfg Serv
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "ngrok-skip-browser-warning"},
+		AllowCredentials: false,
+		MaxAge:           300,
+	}))
 
 	health := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
